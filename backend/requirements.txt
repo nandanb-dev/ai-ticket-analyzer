@@ -1,0 +1,17 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+python-dotenv>=1.0.1
+anyio>=4.0.0
+
+# AI
+langchain>=0.3.0
+langchain-openai>=0.3.0
+langgraph>=0.2.0
+
+# Document parsing
+pypdf>=5.1.0
+python-docx>=1.1.2
+
+# JIRA
+requests>=2.32.3
