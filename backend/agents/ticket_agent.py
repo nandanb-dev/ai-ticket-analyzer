@@ -20,10 +20,20 @@ class TicketState(TypedDict):
     error: Optional[str]
 
 
-# ── LLM + chain ───────────────────────────────────────────────────────────────
+# ── LLM + chain (lazy-initialized on first request) ─────────────────────────
 
-_llm = ChatOpenAI(model="gpt-4o", temperature=0.2, api_key=OPENAI_API_KEY)
-_chain = TICKET_GENERATION_PROMPT | _llm | JsonOutputParser()
+_chain = None
+
+
+def _get_chain():
+    global _chain
+    if _chain is not None:
+        return _chain
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not configured in .env")
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.2, api_key=OPENAI_API_KEY)
+    _chain = TICKET_GENERATION_PROMPT | llm | JsonOutputParser()
+    return _chain
 
 
 # ── Nodes ─────────────────────────────────────────────────────────────────────
@@ -31,7 +41,7 @@ _chain = TICKET_GENERATION_PROMPT | _llm | JsonOutputParser()
 def _generate_node(state: TicketState) -> dict:
     """Call GPT-4o to produce structured ticket JSON from PRD text."""
     try:
-        ticket_data = _chain.invoke({"prd_content": state["prd_text"]})
+        ticket_data = _get_chain().invoke({"prd_content": state["prd_text"]})
         return {"ticket_data": ticket_data}
     except Exception as exc:
         return {"error": f"AI generation failed: {exc}"}

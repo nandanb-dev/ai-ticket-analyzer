@@ -1,7 +1,7 @@
-import os
+import sys
 import uvicorn
 
-os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+sys.dont_write_bytecode = True
 
 if __name__ == "__main__":
     # Run from the backend/ directory: python run.py

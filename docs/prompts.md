@@ -11,7 +11,7 @@ the design decisions behind them.
 entire conversation.
 
 **Key design decisions:**
-- Establishes 12+ years of cross-functional experience to get senior-level output
+- Establishes 10+ years of cross-functional experience to get senior-level output
 - Explicitly lists the four audiences (Developer, QA, PM, Product) so the AI
   generates content suitable for each
 - Defines ticket hierarchy (Epic → Story → Task → Bug) with exact naming conventions
@@ -123,16 +123,16 @@ THEN  [expected observable outcome]
 
 ## 4. Test Case Design
 
-The prompt mandates **minimum 4 test cases per Story**:
+The prompt mandates **minimum 3 test cases per Story**:
 
 | # | Type | Purpose |
 |---|---|---|
 | 1 | `positive` | Happy path — valid input, expected success outcome |
 | 2 | `negative` | Invalid input — error handling, rejection, validation |
 | 3 | `edge` | Boundary values — empty, null, max-length, special chars |
-| 4 | `security` | Auth bypass, injection, IDOR, rate limit |
 
 Additional types generated when relevant:
+- `security` — auth bypass, injection, IDOR, rate limit
 - `performance` — for latency/throughput requirements
 - `integration` — for cross-service flows
 
@@ -174,7 +174,7 @@ Every ticket includes this standardised DoD:
 
 ## 7. Chunking Strategy for Large Documents
 
-For documents exceeding **60,000 characters** (~45,000 words):
+For documents exceeding **60,000 characters** (~10,000 words):
 
 1. Split into chunks of ~20,000 characters
 2. Summarize each chunk using `DOCUMENT_CHUNK_SUMMARY_PROMPT`
@@ -198,14 +198,16 @@ For documents exceeding **60,000 characters** (~45,000 words):
 
 ## 9. MCP Atlassian Integration
 
-[mcp-atlassian](https://github.com/sooperset/mcp-atlassian) is both:
+The application backend integrates with Jira via direct REST API calls in
+`backend/services/jira.py`. It does **not** use an internal `JiraClient` backed
+by `mcp-atlassian`.
 
-1. **The MCP server** used by this application's `JiraClient` service to make
-   authenticated JIRA REST API calls
-2. **An IDE integration** you can configure for Claude Desktop / VS Code Copilot
-   to let your AI assistant manage JIRA directly
+[mcp-atlassian](https://github.com/sooperset/mcp-atlassian) is useful as an
+**optional external MCP/IDE integration** you can configure for tools such as
+Claude Desktop, Cursor, or VS Code Copilot to let your AI assistant manage
+Jira directly outside the app runtime.
 
-### MCP Server Config (Claude Desktop / Cursor)
+### Optional MCP Server Config (Claude Desktop / Cursor)
 
 ```json
 {

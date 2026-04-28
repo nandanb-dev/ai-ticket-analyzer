@@ -1,13 +1,8 @@
 import io
-import os
-import tempfile
-
-from fastapi import UploadFile
 
 
-def extract_text(file: UploadFile) -> str:
-    content = file.file.read()
-    name = (file.filename or "").lower()
+def extract_text(content: bytes, filename: str) -> str:
+    name = filename.lower()
 
     if name.endswith(".pdf"):
         from pypdf import PdfReader
@@ -16,11 +11,7 @@ def extract_text(file: UploadFile) -> str:
 
     if name.endswith(".docx"):
         from docx import Document
-        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-        doc = Document(tmp_path)
-        os.unlink(tmp_path)
+        doc = Document(io.BytesIO(content))  # no temp file needed
         return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
     # .txt / .md — plain text
