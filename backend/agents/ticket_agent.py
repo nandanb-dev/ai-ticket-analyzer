@@ -1,10 +1,10 @@
 from typing import Optional, TypedDict
 
 from langchain_core.output_parsers import JsonOutputParser
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, StateGraph
 
-from config import JIRA_API_TOKEN, JIRA_URL, JIRA_USERNAME, OPENAI_API_KEY
+from config import JIRA_API_TOKEN, JIRA_URL, JIRA_USERNAME, GOOGLE_API_KEY
 from prompts.ticket_generation import TICKET_GENERATION_PROMPT
 from services.jira import push_tickets
 
@@ -29,9 +29,9 @@ def _get_chain():
     global _chain
     if _chain is not None:
         return _chain
-    if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY is not configured in .env")
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.2, api_key=OPENAI_API_KEY)
+    if not GOOGLE_API_KEY:
+        raise RuntimeError("GOOGLE_API_KEY is not configured in .env")
+    llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", temperature=0.2)
     _chain = TICKET_GENERATION_PROMPT | llm | JsonOutputParser()
     return _chain
 
@@ -39,7 +39,7 @@ def _get_chain():
 # ── Nodes ─────────────────────────────────────────────────────────────────────
 
 def _generate_node(state: TicketState) -> dict:
-    """Call GPT-4o to produce structured ticket JSON from PRD text."""
+    """Call gemini-1.5-flash to produce structured ticket JSON from PRD text."""
     try:
         ticket_data = _get_chain().invoke({"prd_content": state["prd_text"]})
         return {"ticket_data": ticket_data}
