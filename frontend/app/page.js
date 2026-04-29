@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
@@ -45,8 +45,11 @@ export default function HomePage() {
   const [isSending, setIsSending] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState("");
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
+    if (session) return;
+
     async function bootstrap() {
       try {
         const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
@@ -67,7 +70,7 @@ export default function HomePage() {
     }
 
     bootstrap();
-  }, []);
+  }, [projectKey, session]);
 
   const pendingTickets = useMemo(() => session?.pending_tickets || {}, [session]);
 
@@ -104,6 +107,7 @@ export default function HomePage() {
       setMessage("");
       setContextText("");
       setFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (nextError) {
       setError(nextError.message);
     } finally {
@@ -228,6 +232,7 @@ export default function HomePage() {
             <label className="upload-field">
               <span>Attach files</span>
               <input
+                ref={fileInputRef}
                 type="file"
                 multiple
                 onChange={(event) => setFiles(Array.from(event.target.files || []))}
