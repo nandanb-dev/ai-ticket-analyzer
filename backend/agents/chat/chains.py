@@ -2,7 +2,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-from config import OPENAI_API_KEY
+from config import CHAT_MODEL, OPENAI_API_KEY
 from prompts.system import SYSTEM_PROMPT
 from prompts.ticket_generation import TICKET_GENERATION_PROMPT
 
@@ -21,7 +21,7 @@ def get_llm() -> ChatOpenAI:
         return _base_llm
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured in .env")
-    _base_llm = ChatOpenAI(model="gpt-4.1", temperature=0.2, api_key=OPENAI_API_KEY)
+    _base_llm = ChatOpenAI(model=CHAT_MODEL, temperature=0.2, api_key=OPENAI_API_KEY)
     return _base_llm
 
 

@@ -4,6 +4,11 @@ from threading import Lock
 from typing import Any
 from uuid import uuid4
 
+_MAX_SESSIONS = 500
+_MAX_MESSAGES_PER_SESSION = 200
+_MAX_ATTACHMENTS_PER_SESSION = 20
+_MAX_ATTACHMENT_CHARS = 100_000
+
 
 @dataclass
 class ChatSession:
@@ -24,6 +29,9 @@ class ChatSessionStore:
     def create_session(self, project_key: str = "") -> ChatSession:
         session = ChatSession(session_id=str(uuid4()), project_key=project_key.strip())
         with self._lock:
+            if len(self._sessions) >= _MAX_SESSIONS:
+                oldest_id = next(iter(self._sessions))
+                del self._sessions[oldest_id]
             self._sessions[session.session_id] = session
         return session
 
@@ -36,12 +44,16 @@ class ChatSessionStore:
         with self._lock:
             session = self._sessions[session_id]
             session.messages.append({"role": role, "content": content})
+            if len(session.messages) > _MAX_MESSAGES_PER_SESSION:
+                session.messages = session.messages[-_MAX_MESSAGES_PER_SESSION:]
             return deepcopy(session)
 
     def add_attachment(self, session_id: str, name: str, content: str) -> ChatSession:
         with self._lock:
             session = self._sessions[session_id]
-            session.attachments.append({"name": name, "content": content})
+            if len(session.attachments) >= _MAX_ATTACHMENTS_PER_SESSION:
+                session.attachments.pop(0)
+            session.attachments.append({"name": name, "content": content[:_MAX_ATTACHMENT_CHARS]})
             return deepcopy(session)
 
     def update_project_key(self, session_id: str, project_key: str) -> ChatSession:

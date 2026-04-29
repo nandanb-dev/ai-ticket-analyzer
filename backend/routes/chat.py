@@ -14,14 +14,6 @@ class CreateSessionRequest(BaseModel):
     project_key: str = ""
 
 
-def _normalize_uploaded_files(files: list[UploadFile | str] | None) -> list[UploadFile]:
-    normalized_files = []
-    for file in files or []:
-        if isinstance(file, UploadFile):
-            normalized_files.append(file)
-    return normalized_files
-
-
 def _session_response(session) -> dict:
     pending = session.pending_tickets or {}
     return {
@@ -63,24 +55,24 @@ async def post_message(
     message: str = Form(""),
     context_text: str = Form(""),
     project_key: str = Form(""),
-    files: list[UploadFile | str] | None = File(None),
+    files: list[UploadFile] = File([]),
 ) -> dict:
     session = chat_sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found")
 
-    uploaded_files = _normalize_uploaded_files(files)
-
-    if not message.strip() and not context_text.strip() and not uploaded_files:
+    if not message.strip() and not context_text.strip() and not files:
         raise HTTPException(status_code=422, detail="Provide a message, context text, or uploaded files.")
 
     if project_key.strip():
         session = chat_sessions.update_project_key(session_id, project_key)
 
     uploaded_names = []
-    for file in uploaded_files:
+    for file in files:
         content = await file.read()
-        text = extract_text(content, file.filename or "")
+        text = await anyio.to_thread.run_sync(
+            extract_text, content, file.filename or ""
+        )
         if text.strip():
             chat_sessions.add_attachment(session_id, file.filename or "uploaded-file", text)
             uploaded_names.append(file.filename or "uploaded-file")
@@ -91,6 +83,12 @@ async def post_message(
 
     if context_text.strip() and not display_message:
         display_message = "Added extra written context for the conversation."
+
+    if not display_message:
+        raise HTTPException(
+            status_code=422,
+            detail="No usable text could be extracted from the uploaded files.",
+        )
 
     session = chat_sessions.append_message(session_id, "user", display_message)
 
