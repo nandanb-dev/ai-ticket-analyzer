@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import CORS_ALLOWED_ORIGINS
+from routes.analyze import router as analyze_router
 from routes.chat import router as chat_router
 from routes.tickets import router as tickets_router
 
@@ -21,4 +22,5 @@ app.add_middleware(
 
 app.include_router(chat_router)
 app.include_router(tickets_router)
+app.include_router(analyze_router)
 
