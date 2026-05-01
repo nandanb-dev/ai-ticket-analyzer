@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from langgraph.graph import END, StateGraph
 
@@ -45,12 +45,12 @@ def run_chat_agent(
     latest_user_message: str,
     context_text: str,
     project_key: str,
-    pending_tickets: dict[str, Any] | None,
+    pending_tickets: Optional[Dict[str, Any]],
     awaiting_confirmation: bool,
-    conversation_history: list[dict[str, str]],
-    attachments: list[dict[str, str]],
-    forced_action: str | None = None,
-) -> dict[str, Any]:
+    conversation_history: List[Dict[str, str]],
+    attachments: List[Dict[str, str]],
+    forced_action: Optional[str] = None,
+) -> Dict[str, Any]:
     final_state = _agent.invoke({
         "session_id": session_id,
         "latest_user_message": latest_user_message,

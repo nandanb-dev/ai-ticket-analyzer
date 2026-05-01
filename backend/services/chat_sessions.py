@@ -1,7 +1,7 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
 from threading import Lock
-from typing import Any
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 _MAX_SESSIONS = 500
@@ -14,17 +14,17 @@ _MAX_ATTACHMENT_CHARS = 100_000
 class ChatSession:
     session_id: str
     project_key: str = ""
-    messages: list[dict[str, str]] = field(default_factory=list)
-    attachments: list[dict[str, str]] = field(default_factory=list)
-    pending_tickets: dict[str, Any] | None = None
+    messages: List[Dict[str, str]] = field(default_factory=list)
+    attachments: List[Dict[str, str]] = field(default_factory=list)
+    pending_tickets: Optional[Dict[str, Any]] = None
     awaiting_confirmation: bool = False
-    last_created: dict[str, Any] | None = None
+    last_created: Optional[Dict[str, Any]] = None
 
 
 class ChatSessionStore:
     def __init__(self) -> None:
         self._lock = Lock()
-        self._sessions: dict[str, ChatSession] = {}
+        self._sessions: Dict[str, ChatSession] = {}
 
     def create_session(self, project_key: str = "") -> ChatSession:
         session = ChatSession(session_id=str(uuid4()), project_key=project_key.strip())
@@ -35,7 +35,7 @@ class ChatSessionStore:
             self._sessions[session.session_id] = session
         return session
 
-    def get_session(self, session_id: str) -> ChatSession | None:
+    def get_session(self, session_id: str) -> Optional[ChatSession]:
         with self._lock:
             session = self._sessions.get(session_id)
             return deepcopy(session) if session else None
@@ -62,14 +62,14 @@ class ChatSessionStore:
             session.project_key = project_key.strip()
             return deepcopy(session)
 
-    def set_pending_tickets(self, session_id: str, tickets: dict[str, Any] | None, awaiting_confirmation: bool) -> ChatSession:
+    def set_pending_tickets(self, session_id: str, tickets: Optional[Dict[str, Any]], awaiting_confirmation: bool) -> ChatSession:
         with self._lock:
             session = self._sessions[session_id]
             session.pending_tickets = deepcopy(tickets)
             session.awaiting_confirmation = awaiting_confirmation
             return deepcopy(session)
 
-    def set_last_created(self, session_id: str, created: dict[str, Any] | None) -> ChatSession:
+    def set_last_created(self, session_id: str, created: Optional[Dict[str, Any]]) -> ChatSession:
         with self._lock:
             session = self._sessions[session_id]
             session.last_created = deepcopy(created)
