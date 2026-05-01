@@ -38,14 +38,13 @@ function SummarySection({ title, items, emptyLabel }) {
 
 export default function HomePage() {
   const [session, setSession] = useState(null);
-  const [projectKey, setProjectKey] = useState("SCRUM");
   const [message, setMessage] = useState("");
-  const [contextText, setContextText] = useState("");
   const [files, setFiles] = useState([]);
   const [isSending, setIsSending] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState("");
   const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
 
   useEffect(() => {
     if (session) return;
@@ -55,7 +54,7 @@ export default function HomePage() {
         const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ project_key: projectKey }),
+          body: JSON.stringify({ project_key: "" }),
         });
 
         if (!response.ok) {
@@ -70,7 +69,7 @@ export default function HomePage() {
     }
 
     bootstrap();
-  }, [projectKey, session]);
+  }, [session]);
 
   const pendingTickets = useMemo(() => session?.pending_tickets || {}, [session]);
 
@@ -86,12 +85,7 @@ export default function HomePage() {
     try {
       const formData = new FormData();
       formData.append("message", message);
-      formData.append("context_text", contextText);
-      formData.append("project_key", projectKey);
-
-      files.forEach((file) => {
-        formData.append("files", file);
-      });
+      files.forEach((file) => formData.append("files", file));
 
       const response = await fetch(`${API_BASE_URL}/chat/sessions/${session.session_id}/messages`, {
         method: "POST",
@@ -105,9 +99,11 @@ export default function HomePage() {
 
       setSession(data);
       setMessage("");
-      setContextText("");
       setFiles([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
     } catch (nextError) {
       setError(nextError.message);
     } finally {
@@ -141,6 +137,20 @@ export default function HomePage() {
     }
   }
 
+  function handleKeyDown(event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      handleSubmit(event);
+    }
+  }
+
+  function handleTextareaInput(event) {
+    const el = event.target;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+    setMessage(el.value);
+  }
+
   return (
     <main className="page-shell">
       <section className="hero-band">
@@ -151,21 +161,6 @@ export default function HomePage() {
             Upload docs, paste notes, keep the discussion grounded in context, preview structured ticket drafts,
             and only create Jira items after human approval.
           </p>
-        </div>
-
-        <div className="hero-metrics">
-          <div className="metric-card">
-            <span>Session</span>
-            <strong>{session?.session_id ? session.session_id.slice(0, 8) : "Starting"}</strong>
-          </div>
-          <div className="metric-card">
-            <span>Project</span>
-            <strong>{session?.project_key || projectKey || "Unset"}</strong>
-          </div>
-          <div className="metric-card">
-            <span>Status</span>
-            <strong>{session?.awaiting_confirmation ? "Awaiting approval" : "Exploration"}</strong>
-          </div>
         </div>
       </section>
 
@@ -200,53 +195,39 @@ export default function HomePage() {
           </div>
 
           <form className="composer-panel" onSubmit={handleSubmit}>
-            <div className="field-grid compact">
-              <label>
-                <span>Jira project key</span>
-                <input value={projectKey} onChange={(event) => setProjectKey(event.target.value.toUpperCase())} placeholder="SCRUM" />
-              </label>
-            </div>
+            <div className="composer-bar">
+              <button
+                type="button"
+                className="icon-btn"
+                title={files.length ? `${files.length} file(s) ready` : "Attach files"}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                📎{files.length > 0 && <span className="attach-badge">{files.length}</span>}
+              </button>
 
-            <div className="field-grid">
-              <label>
-                <span>Ask the assistant what to do</span>
-                <textarea
-                  rows={4}
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                  placeholder="Example: I have a Todo app PRD and a stakeholder call transcript. Help me understand the scope and then draft Jira tickets."
-                />
-              </label>
-
-              <label>
-                <span>Paste supporting context</span>
-                <textarea
-                  rows={7}
-                  value={contextText}
-                  onChange={(event) => setContextText(event.target.value)}
-                  placeholder="Paste transcript notes, backlog dumps, acceptance criteria, or risk notes here."
-                />
-              </label>
-            </div>
-
-            <label className="upload-field">
-              <span>Attach files</span>
               <input
                 ref={fileInputRef}
                 type="file"
                 multiple
+                style={{ display: "none" }}
                 onChange={(event) => setFiles(Array.from(event.target.files || []))}
               />
-            </label>
 
-            {files.length ? <p className="muted-copy">{files.length} file(s) ready to send.</p> : null}
-            {error ? <p className="error-banner">{error}</p> : null}
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={message}
+                onInput={handleTextareaInput}
+                onKeyDown={handleKeyDown}
+                placeholder="Message the assistant… (Enter to send, Shift+Enter for new line)"
+              />
 
-            <div className="composer-actions">
-              <button className="send-button" type="submit" disabled={isSending}>
-                {isSending ? "Sending..." : "Send into chat"}
+              <button className="icon-btn send-icon-btn" type="submit" disabled={isSending} title="Send">
+                {isSending ? "…" : "➤"}
               </button>
             </div>
+
+            {error ? <p className="error-banner">{error}</p> : null}
           </form>
         </section>
 

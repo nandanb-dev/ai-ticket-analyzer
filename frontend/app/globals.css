@@ -43,10 +43,6 @@ textarea {
 }
 
 .hero-band {
-  display: grid;
-  grid-template-columns: 1.5fr 1fr;
-  gap: 18px;
-  align-items: stretch;
   margin-bottom: 20px;
 }
 
@@ -221,6 +217,77 @@ label span {
   border-top: 1px solid var(--line);
 }
 
+.composer-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(21, 34, 38, 0.16);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 2px 12px rgba(22, 34, 38, 0.07);
+}
+
+.composer-bar textarea {
+  flex: 1;
+  border: none;
+  background: transparent;
+  resize: none;
+  outline: none;
+  padding: 4px 0;
+  max-height: 160px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
+.icon-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  transition: background 150ms ease;
+}
+
+.icon-btn:hover {
+  background: rgba(11, 110, 105, 0.1);
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.send-icon-btn {
+  color: var(--teal);
+  font-size: 1.1rem;
+}
+
+.attach-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--amber);
+  color: #fff;
+  font-size: 0.6rem;
+  font-family: "Trebuchet MS", sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
 .field-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -337,7 +404,6 @@ textarea {
 }
 
 @media (max-width: 1120px) {
-  .hero-band,
   .workspace-grid,
   .field-grid,
   .field-grid.compact {
