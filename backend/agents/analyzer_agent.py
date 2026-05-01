@@ -15,7 +15,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 
-from config import JIRA_API_TOKEN, JIRA_URL, JIRA_USERNAME, OPENAI_API_KEY
+from config import CHAT_MODEL, JIRA_API_TOKEN, JIRA_URL, JIRA_USERNAME, OPENAI_API_KEY
 from prompts.ticket_analysis import TICKET_ANALYSIS_PROMPT, TICKET_REFINEMENT_PROMPT
 from services.jira import fetch_epic_tickets, fetch_project_tickets, fetch_ticket_by_key, update_issue
 
@@ -35,6 +35,7 @@ class AnalyzerState(TypedDict):
     raw_tickets: Optional[list[dict]]
     analysis: Optional[dict]
     apply_keys: Optional[list[str]]   # ticket keys the user wants to apply updates to
+    apply_only_approved: bool
 
     # Output
     result: Optional[dict]
@@ -53,7 +54,7 @@ def _get_analysis_chain():
         return _analysis_chain
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured in .env")
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.1, api_key=OPENAI_API_KEY)
+    llm = ChatOpenAI(model=CHAT_MODEL, temperature=0.1, api_key=OPENAI_API_KEY)
     _analysis_chain = TICKET_ANALYSIS_PROMPT | llm | JsonOutputParser()
     return _analysis_chain
 
@@ -64,7 +65,7 @@ def _get_refinement_chain():
         return _refinement_chain
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured in .env")
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.1, api_key=OPENAI_API_KEY)
+    llm = ChatOpenAI(model=CHAT_MODEL, temperature=0.1, api_key=OPENAI_API_KEY)
     _refinement_chain = TICKET_REFINEMENT_PROMPT | llm | JsonOutputParser()
     return _refinement_chain
 
@@ -143,6 +144,7 @@ def _apply_node(state: AnalyzerState) -> dict:
 
         analysis = state.get("analysis") or state.get("previous_analysis") or {}
         apply_keys_filter = state.get("apply_keys")  # None means apply all
+        apply_only_approved = bool(state.get("apply_only_approved", False))
 
         tickets_analysis = analysis.get("tickets", [])
         applied = []
@@ -158,6 +160,9 @@ def _apply_node(state: AnalyzerState) -> dict:
 
             updates = ticket.get("suggested_updates", {})
             if not updates:
+                skipped.append(key)
+                continue
+            if apply_only_approved and not apply_keys_filter and not updates.get("approved"):
                 skipped.append(key)
                 continue
 
@@ -280,6 +285,7 @@ def run_analyzer_agent(
         "raw_tickets": None,
         "analysis": None,
         "apply_keys": None,
+        "apply_only_approved": False,
         "result": None,
         "error": None,
     })
@@ -307,6 +313,7 @@ def run_refine_agent(
         "raw_tickets": None,
         "analysis": None,
         "apply_keys": None,
+        "apply_only_approved": False,
         "result": None,
         "error": None,
     })
@@ -319,11 +326,12 @@ def run_apply_agent(
     *,
     analysis: dict,
     apply_keys: list[str] | None,
+    apply_only_approved: bool = False,
     project_key: str | None = None,
     epic_key: str | None = None,
     ticket_key: str | None = None,
 ) -> dict[str, Any]:
-    """Apply approved suggestions from an analysis back to JIRA."""
+    """Apply suggestions from an analysis back to JIRA."""
     final = _apply_agent.invoke({
         "project_key": project_key,
         "epic_key": epic_key,
@@ -334,6 +342,7 @@ def run_apply_agent(
         "raw_tickets": None,
         "analysis": analysis,
         "apply_keys": apply_keys,
+        "apply_only_approved": apply_only_approved,
         "result": None,
         "error": None,
     })

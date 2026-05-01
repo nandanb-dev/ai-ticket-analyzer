@@ -4,6 +4,11 @@ from fastapi import HTTPException
 from config import JIRA_API_TOKEN, JIRA_URL, JIRA_USERNAME
 
 
+def _validate_jira_credentials() -> None:
+    if not all([JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN]):
+        raise HTTPException(status_code=500, detail="JIRA credentials not configured in .env")
+
+
 def _text_to_adf(text: str) -> dict:
     """Convert plain text with newlines into a proper Atlassian Document Format (ADF) doc."""
     paragraphs = []
@@ -15,6 +20,71 @@ def _text_to_adf(text: str) -> dict:
     if not paragraphs:
         paragraphs = [{"type": "paragraph", "content": [{"type": "text", "text": text}]}]
     return {"type": "doc", "version": 1, "content": paragraphs}
+
+
+def _format_acceptance_criteria(items: list[dict] | None, warnings: list[str] | None = None) -> str:
+    lines: list[str] = []
+    for index, item in enumerate(items or [], start=1):
+        given = (item or {}).get("given")
+        when = (item or {}).get("when")
+        then = (item or {}).get("then")
+        if not all([given, when, then]):
+            if warnings is not None:
+                warnings.append(f"skipped malformed acceptance criterion #{index}")
+            continue
+        lines.append(f"- GIVEN {given} WHEN {when} THEN {then}")
+    return "\n".join(lines)
+
+
+def _format_test_cases(items: list[dict] | None, warnings: list[str] | None = None) -> str:
+    lines: list[str] = []
+    for index, item in enumerate(items or [], start=1):
+        case_type = (item or {}).get("type")
+        title = (item or {}).get("title")
+        expected = (item or {}).get("expected")
+        steps = (item or {}).get("steps", [])
+        if not all([case_type, title, expected]) or not isinstance(steps, list):
+            if warnings is not None:
+                warnings.append(f"skipped malformed test case #{index}")
+            continue
+        lines.append(
+            f"- [{str(case_type).upper()}] {title}\n"
+            f"  Steps: {' → '.join(str(step) for step in steps)}\n"
+            f"  Expected: {expected}"
+        )
+    return "\n".join(lines)
+
+
+def _format_edge_cases(items: list[str] | None) -> str:
+    valid_items = [str(item) for item in (items or []) if item]
+    return "\n".join(f"- {item}" for item in valid_items)
+
+
+def _search_issues(jql: str, start_at: int, page_size: int, fields: str) -> requests.Response:
+    endpoints = [
+        (f"{JIRA_URL}/rest/api/3/search/jql", {"jql": jql, "startAt": start_at, "maxResults": page_size, "fields": fields}),
+        (f"{JIRA_URL}/rest/api/3/search", {"jql": jql, "startAt": start_at, "maxResults": page_size, "fields": fields}),
+    ]
+
+    last_response = None
+    for url, params in endpoints:
+        resp = requests.get(
+            url,
+            params=params,
+            auth=(JIRA_USERNAME, JIRA_API_TOKEN),
+            headers={"Accept": "application/json"},
+            timeout=20,
+        )
+        if resp.ok:
+            return resp
+        last_response = resp
+
+        response_text = (resp.text or "").lower()
+        can_retry_other_endpoint = resp.status_code in {400, 404, 410} or "removed" in response_text or "migrate" in response_text
+        if not can_retry_other_endpoint:
+            break
+
+    raise HTTPException(status_code=502, detail=f"JIRA search error: {last_response.text if last_response else 'unknown error'}")
 
 
 def create_issue(
@@ -126,23 +196,19 @@ def _build_story_description(story: dict) -> str:
     description = story["description"]
 
     if story.get("acceptance_criteria"):
-        lines = "\n".join(
-            f"- GIVEN {ac['given']} WHEN {ac['when']} THEN {ac['then']}"
-            for ac in story["acceptance_criteria"]
-        )
-        description += f"\n\nAcceptance Criteria:\n{lines}"
+        lines = _format_acceptance_criteria(story.get("acceptance_criteria"))
+        if lines:
+            description += f"\n\nAcceptance Criteria:\n{lines}"
 
     if story.get("test_cases"):
-        lines = "\n".join(
-            f"- [{tc['type'].upper()}] {tc['title']}\n"
-            f"  Steps: {' → '.join(tc.get('steps', []))}\n"
-            f"  Expected: {tc.get('expected', '')}"
-            for tc in story["test_cases"]
-        )
-        description += f"\n\nTest Cases:\n{lines}"
+        lines = _format_test_cases(story.get("test_cases"))
+        if lines:
+            description += f"\n\nTest Cases:\n{lines}"
 
     if story.get("edge_cases"):
-        description += "\n\nEdge Cases:\n" + "\n".join(f"- {e}" for e in story["edge_cases"])
+        lines = _format_edge_cases(story.get("edge_cases"))
+        if lines:
+            description += "\n\nEdge Cases:\n" + lines
 
     return description
 
@@ -151,11 +217,9 @@ def _build_task_description(task: dict) -> str:
     description = task["description"]
 
     if task.get("acceptance_criteria"):
-        lines = "\n".join(
-            f"- GIVEN {ac['given']} WHEN {ac['when']} THEN {ac['then']}"
-            for ac in task["acceptance_criteria"]
-        )
-        description += f"\n\nAcceptance Criteria:\n{lines}"
+        lines = _format_acceptance_criteria(task.get("acceptance_criteria"))
+        if lines:
+            description += f"\n\nAcceptance Criteria:\n{lines}"
 
     return description
 
@@ -164,31 +228,22 @@ def _build_task_description(task: dict) -> str:
 
 def _fetch_issues_by_jql(jql: str, max_results: int = 200) -> list[dict]:
     """Execute a JQL query and return a flat list of simplified issue dicts."""
-    if not all([JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN]):
-        raise HTTPException(status_code=500, detail="JIRA credentials not configured in .env")
+    _validate_jira_credentials()
 
     fields = "summary,description,issuetype,priority,labels,status,assignee,parent,subtasks,customfield_10016,customfield_10014,customfield_10028"
     start_at = 0
     all_issues: list[dict] = []
 
     while True:
-        resp = requests.get(
-            f"{JIRA_URL}/rest/api/3/search/jql",
-            params={
-                "jql": jql,
-                "startAt": start_at,
-                "maxResults": min(50, max_results - len(all_issues)),
-                "fields": fields,
-            },
-            auth=(JIRA_USERNAME, JIRA_API_TOKEN),
-            headers={"Accept": "application/json"},
-            timeout=20,
-        )
-        if not resp.ok:
-            raise HTTPException(status_code=502, detail=f"JIRA search error: {resp.text}")
+        remaining = max_results - len(all_issues)
+        if remaining <= 0:
+            break
+        resp = _search_issues(jql, start_at, min(50, remaining), fields)
 
         data = resp.json()
         issues = data.get("issues", [])
+        if not issues:
+            break
         all_issues.extend(_simplify_issue(i) for i in issues)
 
         if len(all_issues) >= data.get("total", 0) or len(all_issues) >= max_results:
@@ -255,6 +310,7 @@ def fetch_project_tickets(project_key: str) -> list[dict]:
 
 def fetch_epic_tickets(epic_key: str) -> list[dict]:
     """Fetch an epic and all stories/tasks that belong to it."""
+    _validate_jira_credentials()
     # Fetch the epic itself
     resp = requests.get(
         f"{JIRA_URL}/rest/api/3/issue/{epic_key}",
@@ -287,8 +343,7 @@ def fetch_epic_tickets(epic_key: str) -> list[dict]:
 
 def fetch_ticket_by_key(issue_key: str) -> list[dict]:
     """Fetch a single ticket by key and return it as a one-item list."""
-    if not all([JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN]):
-        raise HTTPException(status_code=500, detail="JIRA credentials not configured in .env")
+    _validate_jira_credentials()
 
     resp = requests.get(
         f"{JIRA_URL}/rest/api/3/issue/{issue_key}",
@@ -322,8 +377,7 @@ def update_issue(issue_key: str, summary: str | None, description: str | None,
                  story_points: int | None, acceptance_criteria: list[dict] | None,
                  test_cases: list[dict] | None, edge_cases: list[str] | None) -> dict:
     """Apply a subset of field updates to an existing JIRA issue."""
-    if not all([JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN]):
-        raise HTTPException(status_code=500, detail="JIRA credentials not configured in .env")
+    _validate_jira_credentials()
 
     editable_fields = _get_editable_fields(issue_key)
     warnings: list[str] = []
@@ -359,21 +413,17 @@ def update_issue(issue_key: str, summary: str | None, description: str | None,
     if description is not None or acceptance_criteria or test_cases or edge_cases:
         base = description or ""
         if acceptance_criteria:
-            lines = "\n".join(
-                f"- GIVEN {ac['given']} WHEN {ac['when']} THEN {ac['then']}"
-                for ac in acceptance_criteria
-            )
-            base += f"\n\nAcceptance Criteria:\n{lines}"
+            lines = _format_acceptance_criteria(acceptance_criteria, warnings)
+            if lines:
+                base += f"\n\nAcceptance Criteria:\n{lines}"
         if test_cases:
-            lines = "\n".join(
-                f"- [{tc['type'].upper()}] {tc['title']}\n"
-                f"  Steps: {' → '.join(tc.get('steps', []))}\n"
-                f"  Expected: {tc.get('expected', '')}"
-                for tc in test_cases
-            )
-            base += f"\n\nTest Cases:\n{lines}"
+            lines = _format_test_cases(test_cases, warnings)
+            if lines:
+                base += f"\n\nTest Cases:\n{lines}"
         if edge_cases:
-            base += "\n\nEdge Cases:\n" + "\n".join(f"- {e}" for e in edge_cases)
+            lines = _format_edge_cases(edge_cases)
+            if lines:
+                base += "\n\nEdge Cases:\n" + lines
         if _is_editable("description"):
             fields["description"] = _text_to_adf(base)
         else:

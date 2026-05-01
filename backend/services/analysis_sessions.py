@@ -52,7 +52,9 @@ class AnalysisSessionStore:
 
     def set_analysis(self, session_id: str, analysis: dict[str, Any]) -> AnalysisSession:
         with self._lock:
-            session = self._sessions[session_id]
+            session = self._sessions.get(session_id)
+            if session is None:
+                raise KeyError(session_id)
             # Push previous analysis into history before overwriting
             if session.analysis:
                 session.revision_history.append(deepcopy(session.analysis))

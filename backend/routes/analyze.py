@@ -69,6 +69,13 @@ class ApplyRequest(BaseModel):
             "Leave null / omit to apply updates for ALL tickets in the analysis."
         ),
     )
+    only_approved: bool = Field(
+        default=False,
+        description=(
+            "If true, apply only tickets with suggested_updates.approved=true. "
+            "If false (default), apply all suggested updates in scope."
+        ),
+    )
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -114,7 +121,10 @@ async def analyze_tickets(req: AnalyzeRequest):
         analysis_sessions.delete_session(session.session_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
-    analysis_sessions.set_analysis(session.session_id, result["analysis"])
+    try:
+        analysis_sessions.set_analysis(session.session_id, result["analysis"])
+    except KeyError:
+        raise HTTPException(status_code=410, detail="Analysis session expired before results could be stored.")
 
     return {
         "session_id": session.session_id,
@@ -182,7 +192,10 @@ async def feedback_on_analysis(session_id: str, req: FeedbackRequest):
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
-    updated_session = analysis_sessions.set_analysis(session_id, result["analysis"])
+    try:
+        updated_session = analysis_sessions.set_analysis(session_id, result["analysis"])
+    except KeyError:
+        raise HTTPException(status_code=410, detail=f"Session '{session_id}' expired before the revision could be stored.")
 
     return {
         "session_id": session_id,
@@ -193,16 +206,20 @@ async def feedback_on_analysis(session_id: str, req: FeedbackRequest):
 
 @router.post(
     "/{session_id}/apply",
-    summary="Apply approved suggestions to JIRA tickets",
+    summary="Apply suggestions to JIRA tickets",
     response_description="List of JIRA ticket keys that were updated",
 )
-async def apply_suggestions(session_id: str, req: ApplyRequest = Body(default=ApplyRequest())):
+async def apply_suggestions(session_id: str, req: ApplyRequest | None = Body(default=None)):
     """
-    Write the `suggested_updates` from the current analysis back to JIRA.
+    Write `suggested_updates` from the current analysis back to JIRA.
 
-    - Pass `ticket_keys` to apply updates only to specific tickets.
-    - Omit `ticket_keys` (or pass `null`) to apply updates to **all** tickets in the analysis.
+    - Pass `ticket_keys` to apply updates only to those tickets.
+    - Set `only_approved=true` to apply only tickets whose `suggested_updates.approved` flag is true.
+    - Default behavior applies all suggested updates when `ticket_keys` is omitted.
     """
+    if req is None:
+        req = ApplyRequest()
+
     session = analysis_sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
@@ -217,6 +234,7 @@ async def apply_suggestions(session_id: str, req: ApplyRequest = Body(default=Ap
             lambda: run_apply_agent(
                 analysis=session.analysis,
                 apply_keys=req.ticket_keys,
+                apply_only_approved=req.only_approved,
                 project_key=session.project_key or None,
                 epic_key=session.epic_key or None,
                 ticket_key=session.ticket_key or None,
