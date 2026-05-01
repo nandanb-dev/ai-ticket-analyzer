@@ -116,7 +116,12 @@ label span {
   gap: 18px;
 }
 
-.conversation-panel,
+.conversation-panel {
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+}
+
 .side-panel {
   padding: 22px;
 }
@@ -171,12 +176,14 @@ label span {
 }
 
 .message-stream {
-  min-height: 380px;
-  max-height: 55vh;
-  overflow: auto;
+  flex: 1;
+  min-height: 200px;
+  max-height: 60vh;
+  overflow-y: auto;
   padding-right: 6px;
   display: grid;
   gap: 12px;
+  align-content: start;
 }
 
 .message-card {
