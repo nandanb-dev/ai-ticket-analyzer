@@ -4,11 +4,26 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
+function renderContent(content) {
+  return content.split("\n").map((line, i) => {
+    if (line.startsWith("- ")) {
+      const text = line.slice(2);
+      return text.length <= 40
+        ? <div key={i} className="msg-bullet">{text}</div>
+        : <div key={i} className="msg-list-item">{text}</div>;
+    }
+    if (line.trim() === "") return <br key={i} />;
+    return <p key={i}>{line}</p>;
+  });
+}
+
 function MessageBubble({ role, content }) {
   return (
     <article className={`message-card ${role === "assistant" ? "assistant" : "user"}`}>
       <span className="message-role">{role}</span>
-      <p>{content}</p>
+      <div className="msg-body">
+        {role === "assistant" ? renderContent(content) : <p>{content}</p>}
+      </div>
     </article>
   );
 }
@@ -42,9 +57,11 @@ export default function HomePage() {
   const [files, setFiles] = useState([]);
   const [isSending, setIsSending] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [optimisticMessage, setOptimisticMessage] = useState("");
   const [error, setError] = useState("");
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
+  const abortRef = useRef(null);
 
   useEffect(() => {
     if (session) return;
@@ -75,21 +92,30 @@ export default function HomePage() {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (!session?.session_id) {
-      return;
-    }
+    if (!session?.session_id || !message.trim()) return;
+
+    const sentMessage = message.trim();
+    setOptimisticMessage(sentMessage);
+    setMessage("");
+    setFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     setIsSending(true);
     setError("");
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       const formData = new FormData();
-      formData.append("message", message);
+      formData.append("message", sentMessage);
       files.forEach((file) => formData.append("files", file));
 
       const response = await fetch(`${API_BASE_URL}/chat/sessions/${session.session_id}/messages`, {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       });
 
       const data = await response.json();
@@ -98,17 +124,17 @@ export default function HomePage() {
       }
 
       setSession(data);
-      setMessage("");
-      setFiles([]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
     } catch (nextError) {
-      setError(nextError.message);
+      if (nextError.name !== "AbortError") setError(nextError.message);
     } finally {
+      setOptimisticMessage("");
       setIsSending(false);
+      abortRef.current = null;
     }
+  }
+
+  function handleStop() {
+    abortRef.current?.abort();
   }
 
   async function handleConfirm() {
@@ -182,10 +208,19 @@ export default function HomePage() {
           </div>
 
           <div className="message-stream">
-            {session?.messages?.length ? (
-              session.messages.map((entry, index) => (
-                <MessageBubble key={`${entry.role}-${index}`} role={entry.role} content={entry.content} />
-              ))
+            {session?.messages?.length || optimisticMessage ? (
+              <>
+                {session.messages.map((entry, index) => (
+                  <MessageBubble key={`${entry.role}-${index}`} role={entry.role} content={entry.content} />
+                ))}
+                {optimisticMessage && <MessageBubble role="user" content={optimisticMessage} />}
+                {isSending && (
+                  <article className="message-card assistant">
+                    <span className="message-role">assistant</span>
+                    <p className="typing-indicator"><span /><span /><span /></p>
+                  </article>
+                )}
+              </>
             ) : (
               <div className="empty-state">
                 <strong>Start with intent, documents, or raw notes.</strong>
@@ -222,9 +257,15 @@ export default function HomePage() {
                 placeholder="Message the assistant… (Enter to send, Shift+Enter for new line)"
               />
 
-              <button className="icon-btn send-icon-btn" type="submit" disabled={isSending} title="Send">
-                {isSending ? "…" : "➤"}
-              </button>
+              {isSending ? (
+                <button className="icon-btn stop-btn" type="button" onClick={handleStop} title="Stop">
+                  ⏹
+                </button>
+              ) : (
+                <button className="icon-btn send-icon-btn" type="submit" title="Send">
+                  ➤
+                </button>
+              )}
             </div>
 
             {error ? <p className="error-banner">{error}</p> : null}
