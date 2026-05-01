@@ -120,6 +120,7 @@ label span {
   padding: 22px;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
 }
 
 .side-panel {
@@ -309,11 +310,21 @@ label span {
 .send-icon-btn {
   color: var(--teal);
   font-size: 1.1rem;
+  background: rgba(11, 110, 105, 0.1);
+}
+
+.send-icon-btn:hover {
+  background: rgba(11, 110, 105, 0.2);
 }
 
 .stop-btn {
   color: #c0392b;
   font-size: 1rem;
+  background: rgba(192, 57, 43, 0.1);
+}
+
+.stop-btn:hover {
+  background: rgba(192, 57, 43, 0.2);
 }
 
 .typing-indicator {
