@@ -13,6 +13,26 @@ AI tool that converts unclear Jira tickets into clear, testable, implementation-
 - `backend/` - FastAPI app and AI/JIRA integration
 - `frontend/` - frontend placeholder (currently minimal)
 
+## Frontend setup
+
+1. Move into the frontend folder:
+
+```bash
+cd frontend
+```
+
+2. Install dependencies:
+
+```bash
+npm install
+```
+
+3. Run the project:
+
+```bash
+npm run dev
+```
+
 ## Backend setup
 
 1. Move into the backend folder:
