@@ -12,10 +12,10 @@ import json
 from typing import Any, Dict, List, Optional, TypedDict
 
 from langchain_core.output_parsers import JsonOutputParser
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, StateGraph
 
-from config import CHAT_MODEL, JIRA_API_TOKEN, JIRA_URL, JIRA_USERNAME, OPENAI_API_KEY
+from config import CHAT_MODEL, JIRA_API_TOKEN, JIRA_URL, JIRA_USERNAME, GOOGLE_API_KEY
 from prompts.ticket_analysis import TICKET_ANALYSIS_PROMPT, TICKET_REFINEMENT_PROMPT
 from services.jira import fetch_epic_tickets, fetch_project_tickets, fetch_ticket_by_key, update_issue
 
@@ -52,9 +52,9 @@ def _get_analysis_chain():
     global _analysis_chain
     if _analysis_chain is not None:
         return _analysis_chain
-    if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY is not configured in .env")
-    llm = ChatOpenAI(model=CHAT_MODEL, temperature=0.1, api_key=OPENAI_API_KEY)
+    if not GOOGLE_API_KEY:
+        raise RuntimeError("GOOGLE_API_KEY is not configured in .env")
+    llm = ChatGoogleGenerativeAI(model=CHAT_MODEL, temperature=0.1, api_key=GOOGLE_API_KEY)
     _analysis_chain = TICKET_ANALYSIS_PROMPT | llm | JsonOutputParser()
     return _analysis_chain
 
@@ -63,9 +63,9 @@ def _get_refinement_chain():
     global _refinement_chain
     if _refinement_chain is not None:
         return _refinement_chain
-    if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY is not configured in .env")
-    llm = ChatOpenAI(model=CHAT_MODEL, temperature=0.1, api_key=OPENAI_API_KEY)
+    if not GOOGLE_API_KEY:
+        raise RuntimeError("GOOGLE_API_KEY is not configured in .env")
+    llm = ChatGoogleGenerativeAI(model=CHAT_MODEL, temperature=0.1, api_key=GOOGLE_API_KEY)
     _refinement_chain = TICKET_REFINEMENT_PROMPT | llm | JsonOutputParser()
     return _refinement_chain
 
