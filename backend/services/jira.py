@@ -1,3 +1,5 @@
+from typing import Dict, List, Optional, Set
+
 import requests
 from fastapi import HTTPException
 
@@ -22,7 +24,7 @@ def _text_to_adf(text: str) -> dict:
     return {"type": "doc", "version": 1, "content": paragraphs}
 
 
-def _format_acceptance_criteria(items: list[dict] | None, warnings: list[str] | None = None) -> str:
+def _format_acceptance_criteria(items: Optional[List[dict]], warnings: Optional[List[str]] = None) -> str:
     lines: list[str] = []
     for index, item in enumerate(items or [], start=1):
         given = (item or {}).get("given")
@@ -36,7 +38,7 @@ def _format_acceptance_criteria(items: list[dict] | None, warnings: list[str] | 
     return "\n".join(lines)
 
 
-def _format_test_cases(items: list[dict] | None, warnings: list[str] | None = None) -> str:
+def _format_test_cases(items: Optional[List[dict]], warnings: Optional[List[str]] = None) -> str:
     lines: list[str] = []
     for index, item in enumerate(items or [], start=1):
         case_type = (item or {}).get("type")
@@ -55,7 +57,7 @@ def _format_test_cases(items: list[dict] | None, warnings: list[str] | None = No
     return "\n".join(lines)
 
 
-def _format_edge_cases(items: list[str] | None) -> str:
+def _format_edge_cases(items: Optional[List[str]]) -> str:
     valid_items = [str(item) for item in (items or []) if item]
     return "\n".join(f"- {item}" for item in valid_items)
 
@@ -359,7 +361,7 @@ def fetch_ticket_by_key(issue_key: str) -> list[dict]:
     return [_simplify_issue(resp.json())]
 
 
-def _get_editable_fields(issue_key: str) -> set[str] | None:
+def _get_editable_fields(issue_key: str) -> Optional[Set[str]]:
     """Return editable field ids for this issue, or None if editmeta is unavailable."""
     resp = requests.get(
         f"{JIRA_URL}/rest/api/3/issue/{issue_key}/editmeta",
@@ -372,10 +374,10 @@ def _get_editable_fields(issue_key: str) -> set[str] | None:
     return set((resp.json().get("fields") or {}).keys())
 
 
-def update_issue(issue_key: str, summary: str | None, description: str | None,
-                 priority: str | None, labels: list[str] | None,
-                 story_points: int | None, acceptance_criteria: list[dict] | None,
-                 test_cases: list[dict] | None, edge_cases: list[str] | None) -> dict:
+def update_issue(issue_key: str, summary: Optional[str], description: Optional[str],
+                 priority: Optional[str], labels: Optional[List[str]],
+                 story_points: Optional[int], acceptance_criteria: Optional[List[dict]],
+                 test_cases: Optional[List[dict]], edge_cases: Optional[List[str]]) -> Dict:
     """Apply a subset of field updates to an existing JIRA issue."""
     _validate_jira_credentials()
 

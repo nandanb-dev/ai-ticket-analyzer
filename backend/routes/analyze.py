@@ -10,6 +10,8 @@ Workflow:
   4. GET  /analyze-tickets/{id}          → retrieve current analysis for a session
 """
 
+from typing import List, Optional
+
 import anyio
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, Field
@@ -23,15 +25,15 @@ router = APIRouter(prefix="/analyze-tickets", tags=["analyze"])
 # ── Request / Response models ─────────────────────────────────────────────────
 
 class AnalyzeRequest(BaseModel):
-    project_key: str | None = Field(
+    project_key: Optional[str] = Field(
         default=None,
         description="JIRA project key (e.g. PROJ). Provide exactly one of project_key, epic_key, or ticket_key.",
     )
-    epic_key: str | None = Field(
+    epic_key: Optional[str] = Field(
         default=None,
         description="JIRA epic key (e.g. PROJ-42). Provide exactly one of project_key, epic_key, or ticket_key.",
     )
-    ticket_key: str | None = Field(
+    ticket_key: Optional[str] = Field(
         default=None,
         description="Single JIRA ticket key (e.g. PROJ-123). Provide exactly one of project_key, epic_key, or ticket_key.",
     )
@@ -62,7 +64,7 @@ class FeedbackRequest(BaseModel):
 
 
 class ApplyRequest(BaseModel):
-    ticket_keys: list[str] | None = Field(
+    ticket_keys: Optional[List[str]] = Field(
         default=None,
         description=(
             "List of JIRA ticket keys whose suggested_updates should be applied. "
@@ -209,7 +211,7 @@ async def feedback_on_analysis(session_id: str, req: FeedbackRequest):
     summary="Apply suggestions to JIRA tickets",
     response_description="List of JIRA ticket keys that were updated",
 )
-async def apply_suggestions(session_id: str, req: ApplyRequest | None = Body(default=None)):
+async def apply_suggestions(session_id: str, req: Optional[ApplyRequest] = Body(default=None)):
     """
     Write `suggested_updates` from the current analysis back to JIRA.
 
