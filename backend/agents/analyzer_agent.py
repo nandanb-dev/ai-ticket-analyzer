@@ -9,7 +9,7 @@ LangGraph-based agent that:
 """
 
 import json
-from typing import Any, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_openai import ChatOpenAI
@@ -32,9 +32,9 @@ class AnalyzerState(TypedDict):
     previous_analysis: Optional[dict]
 
     # Internal
-    raw_tickets: Optional[list[dict]]
+    raw_tickets: Optional[List[Dict]]
     analysis: Optional[dict]
-    apply_keys: Optional[list[str]]   # ticket keys the user wants to apply updates to
+    apply_keys: Optional[List[str]]   # ticket keys the user wants to apply updates to
     apply_only_approved: bool
 
     # Output
@@ -269,11 +269,11 @@ _apply_agent = _apply_graph.compile()
 
 def run_analyzer_agent(
     *,
-    project_key: str | None,
-    epic_key: str | None,
-    ticket_key: str | None,
+    project_key: Optional[str],
+    epic_key: Optional[str],
+    ticket_key: Optional[str],
     user_context: str,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """Fetch + analyze tickets. Returns analysis result dict."""
     final = _analyze_agent.invoke({
         "project_key": project_key,
@@ -296,12 +296,12 @@ def run_analyzer_agent(
 
 def run_refine_agent(
     *,
-    previous_analysis: dict,
+    previous_analysis: Dict,
     user_feedback: str,
-    project_key: str | None = None,
-    epic_key: str | None = None,
-    ticket_key: str | None = None,
-) -> dict[str, Any]:
+    project_key: Optional[str] = None,
+    epic_key: Optional[str] = None,
+    ticket_key: Optional[str] = None,
+) -> Dict[str, Any]:
     """Refine an existing analysis using user feedback."""
     final = _refine_agent.invoke({
         "project_key": project_key,
@@ -324,13 +324,13 @@ def run_refine_agent(
 
 def run_apply_agent(
     *,
-    analysis: dict,
-    apply_keys: list[str] | None,
+    analysis: Dict,
+    apply_keys: Optional[List[str]],
     apply_only_approved: bool = False,
-    project_key: str | None = None,
-    epic_key: str | None = None,
-    ticket_key: str | None = None,
-) -> dict[str, Any]:
+    project_key: Optional[str] = None,
+    epic_key: Optional[str] = None,
+    ticket_key: Optional[str] = None,
+) -> Dict[str, Any]:
     """Apply suggestions from an analysis back to JIRA."""
     final = _apply_agent.invoke({
         "project_key": project_key,

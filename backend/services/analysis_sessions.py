@@ -1,7 +1,7 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
 from threading import Lock
-from typing import Any
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 _MAX_SESSIONS = 200
@@ -14,15 +14,15 @@ class AnalysisSession:
     epic_key: str = ""
     ticket_key: str = ""
     user_context: str = ""
-    analysis: dict[str, Any] = field(default_factory=dict)
+    analysis: Dict[str, Any] = field(default_factory=dict)
     # Tracks all revisions so the user can always reference the latest
-    revision_history: list[dict[str, Any]] = field(default_factory=list)
+    revision_history: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class AnalysisSessionStore:
     def __init__(self) -> None:
         self._lock = Lock()
-        self._sessions: dict[str, AnalysisSession] = {}
+        self._sessions: Dict[str, AnalysisSession] = {}
 
     def create_session(
         self,
@@ -45,12 +45,12 @@ class AnalysisSessionStore:
             self._sessions[session.session_id] = session
         return session
 
-    def get_session(self, session_id: str) -> AnalysisSession | None:
+    def get_session(self, session_id: str) -> Optional[AnalysisSession]:
         with self._lock:
             session = self._sessions.get(session_id)
             return deepcopy(session) if session else None
 
-    def set_analysis(self, session_id: str, analysis: dict[str, Any]) -> AnalysisSession:
+    def set_analysis(self, session_id: str, analysis: Dict[str, Any]) -> AnalysisSession:
         with self._lock:
             session = self._sessions.get(session_id)
             if session is None:
