@@ -15,3 +15,6 @@ python-docx>=1.1.2
 
 # JIRA
 requests>=2.32.3
+
+# DATABASE
+motor>=3.6.0
