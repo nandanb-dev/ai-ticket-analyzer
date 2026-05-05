@@ -154,6 +154,7 @@ async def get_analysis(session_id: str):
         "epic_key": session.epic_key,
         "ticket_key": session.ticket_key,
         "revision": len(session.revision_history),
+        "user_context": session.user_context,
         "analysis": session.analysis,
     }
 
@@ -195,7 +196,9 @@ async def feedback_on_analysis(session_id: str, req: FeedbackRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
     try:
-        updated_session = await analysis_sessions.set_analysis(session_id, result["analysis"])
+        analysis = result["analysis"]
+        analysis["user_feedback"] = req.feedback
+        updated_session = await analysis_sessions.set_analysis(session_id, analysis)
     except KeyError:
         raise HTTPException(status_code=410, detail=f"Session '{session_id}' expired before the revision could be stored.")
 
