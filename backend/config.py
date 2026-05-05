@@ -13,3 +13,6 @@ CORS_ALLOWED_ORIGINS: list[str] = [
     for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
     if origin.strip()
 ]
+
+MONGODB_URI: str = os.getenv("MONGODB_URI", "")
+MONGODB_DB_NAME: str = os.getenv("MONGODB_DB_NAME", "ai_ticket")
