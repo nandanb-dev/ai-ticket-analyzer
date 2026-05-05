@@ -37,13 +37,13 @@ def _session_response(session) -> dict:
 
 @router.post("/sessions")
 async def create_session(payload: CreateSessionRequest) -> dict:
-    session = chat_sessions.create_session(project_key=payload.project_key)
+    session = await chat_sessions.create_session(project_key=payload.project_key)
     return _session_response(session)
 
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str) -> dict:
-    session = chat_sessions.get_session(session_id)
+    session = await chat_sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found")
     return _session_response(session)
@@ -57,7 +57,7 @@ async def post_message(
     project_key: str = Form(""),
     files: list[UploadFile] = File([]),
 ) -> dict:
-    session = chat_sessions.get_session(session_id)
+    session = await chat_sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found")
 
@@ -65,7 +65,7 @@ async def post_message(
         raise HTTPException(status_code=422, detail="Provide a message, context text, or uploaded files.")
 
     if project_key.strip():
-        session = chat_sessions.update_project_key(session_id, project_key)
+        session = await chat_sessions.update_project_key(session_id, project_key)
 
     uploaded_names = []
     for file in files:
@@ -74,7 +74,7 @@ async def post_message(
             extract_text, content, file.filename or ""
         )
         if text.strip():
-            chat_sessions.add_attachment(session_id, file.filename or "uploaded-file", text)
+            await chat_sessions.add_attachment(session_id, file.filename or "uploaded-file", text)
             uploaded_names.append(file.filename or "uploaded-file")
 
     display_message = message.strip()
@@ -90,7 +90,7 @@ async def post_message(
             detail="No usable text could be extracted from the uploaded files.",
         )
 
-    session = chat_sessions.append_message(session_id, "user", display_message)
+    session = await chat_sessions.append_message(session_id, "user", display_message)
 
     try:
         result = await anyio.to_thread.run_sync(
@@ -109,13 +109,13 @@ async def post_message(
         raise HTTPException(status_code=500, detail=str(exc))
 
     if result.get("generated_tickets"):
-        chat_sessions.set_pending_tickets(session_id, result["generated_tickets"], awaiting_confirmation=True)
+        await chat_sessions.set_pending_tickets(session_id, result["generated_tickets"], awaiting_confirmation=True)
 
     if result.get("created"):
-        chat_sessions.set_last_created(session_id, result["created"])
-        chat_sessions.set_pending_tickets(session_id, None, awaiting_confirmation=False)
+        await chat_sessions.set_last_created(session_id, result["created"])
+        await chat_sessions.set_pending_tickets(session_id, None, awaiting_confirmation=False)
 
-    session = chat_sessions.append_message(session_id, "assistant", result["assistant_message"])
+    session = await chat_sessions.append_message(session_id, "assistant", result["assistant_message"])
 
     response = _session_response(session)
     response["decision"] = result["decision"]
@@ -124,7 +124,7 @@ async def post_message(
 
 @router.post("/sessions/{session_id}/confirm")
 async def confirm_tickets(session_id: str) -> dict:
-    session = chat_sessions.get_session(session_id)
+    session = await chat_sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found")
 
@@ -146,10 +146,10 @@ async def confirm_tickets(session_id: str) -> dict:
         raise HTTPException(status_code=500, detail=str(exc))
 
     if result.get("created"):
-        chat_sessions.set_last_created(session_id, result["created"])
-        chat_sessions.set_pending_tickets(session_id, None, awaiting_confirmation=False)
+        await chat_sessions.set_last_created(session_id, result["created"])
+        await chat_sessions.set_pending_tickets(session_id, None, awaiting_confirmation=False)
 
-    session = chat_sessions.append_message(session_id, "assistant", result["assistant_message"])
+    session = await chat_sessions.append_message(session_id, "assistant", result["assistant_message"])
 
     response = _session_response(session)
     response["decision"] = result["decision"]

@@ -103,7 +103,7 @@ async def analyze_tickets(req: AnalyzeRequest):
         )
 
     # Create session before running the agent so we always have an id to return
-    session = analysis_sessions.create_session(
+    session = await analysis_sessions.create_session(
         project_key=req.project_key or "",
         epic_key=req.epic_key or "",
         ticket_key=req.ticket_key or "",
@@ -120,11 +120,11 @@ async def analyze_tickets(req: AnalyzeRequest):
             )
         )
     except RuntimeError as exc:
-        analysis_sessions.delete_session(session.session_id)
+        await analysis_sessions.delete_session(session.session_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
     try:
-        analysis_sessions.set_analysis(session.session_id, result["analysis"])
+        await analysis_sessions.set_analysis(session.session_id, result["analysis"])
     except KeyError:
         raise HTTPException(status_code=410, detail="Analysis session expired before results could be stored.")
 
@@ -145,7 +145,7 @@ async def analyze_tickets(req: AnalyzeRequest):
 )
 async def get_analysis(session_id: str):
     """Retrieve the latest analysis (and revision count) for an existing session."""
-    session = analysis_sessions.get_session(session_id)
+    session = await analysis_sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
     return {
@@ -172,7 +172,7 @@ async def feedback_on_analysis(session_id: str, req: FeedbackRequest):
     - *"The payment service uses Stripe, not PayPal. Re-evaluate PROJ-12 and PROJ-15 with that in mind."*
     - *"Add more edge cases for the file upload tickets."*
     """
-    session = analysis_sessions.get_session(session_id)
+    session = await analysis_sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
     if not session.analysis:
@@ -195,7 +195,7 @@ async def feedback_on_analysis(session_id: str, req: FeedbackRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
     try:
-        updated_session = analysis_sessions.set_analysis(session_id, result["analysis"])
+        updated_session = await analysis_sessions.set_analysis(session_id, result["analysis"])
     except KeyError:
         raise HTTPException(status_code=410, detail=f"Session '{session_id}' expired before the revision could be stored.")
 
@@ -222,7 +222,7 @@ async def apply_suggestions(session_id: str, req: Optional[ApplyRequest] = Body(
     if req is None:
         req = ApplyRequest()
 
-    session = analysis_sessions.get_session(session_id)
+    session = await analysis_sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
     if not session.analysis:
