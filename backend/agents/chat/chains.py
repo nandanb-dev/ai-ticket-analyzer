@@ -1,8 +1,8 @@
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 
-from config import CHAT_MODEL, GOOGLE_API_KEY
+from config import CHAT_MODEL, GROQ_API_KEY
 from prompts.system import SYSTEM_PROMPT
 from prompts.ticket_generation import TICKET_GENERATION_PROMPT
 
@@ -15,13 +15,13 @@ _response_chain = None
 _ticket_chain = None
 
 
-def get_llm() -> ChatGoogleGenerativeAI:
+def get_llm() -> ChatGroq:
     global _base_llm
     if _base_llm is not None:
         return _base_llm
-    if not GOOGLE_API_KEY:
-        raise RuntimeError("GOOGLE_API_KEY is not configured in .env")
-    _base_llm = ChatGoogleGenerativeAI(model=CHAT_MODEL, temperature=0.2, api_key=GOOGLE_API_KEY)
+    if not GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY is not configured in .env")
+    _base_llm = ChatGroq(model=CHAT_MODEL, temperature=0.2, api_key=GROQ_API_KEY)
     return _base_llm
 
 
