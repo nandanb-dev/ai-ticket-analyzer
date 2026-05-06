@@ -5,6 +5,7 @@ from config import CORS_ALLOWED_ORIGINS
 from routes.analyze import router as analyze_router
 from routes.chat import router as chat_router
 from routes.tickets import router as tickets_router
+from routes.test_cases import router as testcases_router
 
 app = FastAPI(
     title="AI Ticket Analyzer",
@@ -23,4 +24,4 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(tickets_router)
 app.include_router(analyze_router)
-
+app.include_router(testcases_router)
