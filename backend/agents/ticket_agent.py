@@ -2,9 +2,11 @@ from typing import Optional, TypedDict
 
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langgraph.graph import END, StateGraph
 
-from config import JIRA_API_TOKEN, JIRA_URL, JIRA_USERNAME, OPENAI_API_KEY
+from config import JIRA_API_TOKEN, JIRA_URL, JIRA_USERNAME, OPENAI_API_KEY, GOOGLE_API_KEY, GROQ_API_KEY
 from prompts.ticket_generation import TICKET_GENERATION_PROMPT
 from services.jira import push_tickets
 
@@ -29,9 +31,15 @@ def _get_chain():
     global _chain
     if _chain is not None:
         return _chain
-    if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY is not configured in .env")
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.2, api_key=OPENAI_API_KEY)
+    # if not OPENAI_API_KEY:
+    #     raise RuntimeError("OPENAI_API_KEY is not configured in .env")
+    # llm = ChatOpenAI(model="gpt-4o", temperature=0.2, api_key=OPENAI_API_KEY)
+    # if not GOOGLE_API_KEY:
+    #     raise RuntimeError("GOOGLE_API_KEY is not configured in .env")
+    # llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", temperature=0.2)
+    if not GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY is not configured in .env")
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2, api_key=GROQ_API_KEY)
     _chain = TICKET_GENERATION_PROMPT | llm | JsonOutputParser()
     return _chain
 
