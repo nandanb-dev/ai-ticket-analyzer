@@ -75,11 +75,14 @@ function SummarySection({ title, items, emptyLabel }) {
 
 function AnalysisCard({ ticket, sessionId, onApplied }) {
   const [cardState, setCardState] = useState("idle");
+  const [expanded, setExpanded] = useState(false);
+  const [showingUpdates, setShowingUpdates] = useState(false);
   const [error, setError] = useState("");
 
   const issues = ticket.issues_found || [];
   const updates = ticket.suggested_updates || {};
   const score = ticket.quality_score;
+  const roleFindings = ticket.role_findings || {};
 
   async function handleApply() {
     setCardState("applying");
@@ -100,45 +103,200 @@ function AnalysisCard({ ticket, sessionId, onApplied }) {
     }
   }
 
+  const roleNames = {
+    product_manager: "Product Manager",
+    developer: "Developer",
+    qa_engineer: "QA Engineer",
+    security_engineer: "Security",
+    devops_sre: "DevOps/SRE",
+    ux_accessibility: "UX/Accessibility",
+    scrum_master: "Scrum Master"
+  };
+
+  const hasRoleFindings = Object.keys(roleFindings).length > 0;
+  const hasUpdates = Object.keys(updates).length > 0;
+
+  // Compact inline metrics
+  const criticalCount = issues.filter(i => i.severity === "critical").length;
+  const majorCount = issues.filter(i => i.severity === "major").length;
+  const minorCount = issues.filter(i => i.severity === "minor").length;
+
   return (
-    <div className={`analysis-card ${cardState}`}>
+    <div className={`analysis-card ${cardState} ${expanded ? 'expanded' : ''}`}>
       <div className="analysis-card-header">
         <div className="analysis-card-title">
           <span className="analysis-key">{ticket.key}</span>
           {ticket.issue_type && <span className="analysis-type">{ticket.issue_type}</span>}
         </div>
-        <span className={`score-badge score-${score >= 8 ? "good" : score >= 5 ? "mid" : "bad"}`}>{score}/10</span>
+        <div className="analysis-card-meta">
+          <div className={`score-bar score-${score >= 8 ? "good" : score >= 5 ? "mid" : "bad"}`}>
+            <div className="score-fill" style={{ width: `${score * 10}%` }} />
+            <span className="score-text">{score}/10</span>
+          </div>
+        </div>
       </div>
+
       <p className="analysis-summary">{ticket.current_summary}</p>
 
+      {/* Inline Metrics Row */}
+      <div className="analysis-metrics-row">
+        {criticalCount > 0 && <span className="metric-pill critical">{criticalCount} Critical</span>}
+        {majorCount > 0 && <span className="metric-pill major">{majorCount} Major</span>}
+        {minorCount > 0 && <span className="metric-pill minor">{minorCount} Minor</span>}
+        {issues.length === 0 && <span className="metric-pill good">No issues</span>}
+      </div>
+
+      {/* Collapsed Issues Preview (first 2 only) */}
       {issues.length > 0 && (
-        <div className="issues-list">
+        <div className="issues-preview">
+          {issues.slice(0, 2).map((issue, i) => (
+            <div key={i} className={`issue-chip-mini sev-${issue.severity}`}>
+              <span className="issue-sev-mini">{issue.severity}</span>
+              <span className="issue-desc-mini">{issue.description.substring(0, 60)}{issue.description.length > 60 ? '…' : ''}</span>
+            </div>
+          ))}
+          {issues.length > 2 && (
+            <button className="issues-more-btn" onClick={() => setExpanded(!expanded)}>
+              [{expanded ? 'v' : '>'}] {issues.length - 2} more issues
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Expanded Issues */}
+      {expanded && issues.length > 0 && (
+        <div className="issues-list-expanded">
           {issues.map((issue, i) => (
             <div key={i} className={`issue-chip sev-${issue.severity}`}>
-              <span className="issue-sev">{issue.severity}</span>
+              <div className="issue-header">
+                <span className="issue-sev">{issue.severity}</span>
+                {issue.category && <span className="issue-cat">{issue.category}</span>}
+              </div>
               <span className="issue-desc">{issue.description}</span>
+              {issue.suggestion && (
+                <span className="issue-suggestion">Suggestion: {issue.suggestion}</span>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      {Object.keys(updates).length > 0 && cardState !== "applied" && (
-        <div className="analysis-card-actions">
-          {cardState === "idle" && (
-            <button className="approve-btn" onClick={() => setCardState("approved")}>✓ Approve</button>
+      {hasRoleFindings && (
+        <div className="role-findings-section">
+          <button className="expand-btn compact" onClick={() => setExpanded(!expanded)}>
+            [{expanded ? 'v' : '>'}] Role Findings ({Object.keys(roleFindings).length})
+          </button>
+          {expanded && (
+            <div className="role-findings-list">
+              {Object.entries(roleFindings).map(([role, finding]) => (
+                <div key={role} className="role-finding">
+                  <span className="role-name">{roleNames[role] || role}</span>
+                  <span className="role-text">{finding}</span>
+                </div>
+              ))}
+            </div>
           )}
-          {cardState === "approved" && (
-            <>
-              <button className="apply-btn" onClick={handleApply}>Apply to JIRA →</button>
-              <button className="skip-btn" onClick={() => setCardState("idle")}>✗ Cancel</button>
-            </>
-          )}
-          {cardState === "applying" && <span className="muted-copy">Applying…</span>}
         </div>
       )}
 
-      {cardState === "applied" && <p className="applied-label">✓ Applied to JIRA</p>}
-      {error && <p className="error-banner">{error}</p>}
+      {hasUpdates && cardState !== "applied" && (
+        <div className="suggested-updates-section">
+          <button className="expand-btn compact" onClick={() => setShowingUpdates(!showingUpdates)}>
+            [{showingUpdates ? 'v' : '>'}] Suggested Updates
+          </button>
+          {showingUpdates && (
+            <div className="updates-detail">
+              {updates.summary && (
+                <div className="update-field">
+                  <span className="update-label">Summary</span>
+                  <p className="update-value">{updates.summary}</p>
+                </div>
+              )}
+              {updates.description && (
+                <div className="update-field">
+                  <span className="update-label">Description</span>
+                  <p className="update-value">{updates.description}</p>
+                </div>
+              )}
+              <div className="update-fields-row">
+                {updates.priority && (
+                  <span className="update-priority">{updates.priority}</span>
+                )}
+                {updates.story_points && (
+                  <span className="update-points">{updates.story_points} pts</span>
+                )}
+              </div>
+              {updates.labels && updates.labels.length > 0 && (
+                <div className="update-field">
+                  <span className="update-label">Labels</span>
+                  <div className="update-labels">
+                    {updates.labels.map((label, i) => (
+                      <span key={i} className="update-label-tag">{label}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {updates.acceptance_criteria && updates.acceptance_criteria.length > 0 && (
+                <div className="update-field">
+                  <span className="update-label">Acceptance Criteria</span>
+                  <div className="update-ac-list">
+                    {updates.acceptance_criteria.map((ac, i) => (
+                      <div key={i} className="ac-item">
+                        <strong>GIVEN</strong> {ac.given}<br/>
+                        <strong>WHEN</strong> {ac.when}<br/>
+                        <strong>THEN</strong> {ac.then}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {updates.test_cases && updates.test_cases.length > 0 && (
+                <div className="update-field">
+                  <span className="update-label">Test Cases ({updates.test_cases.length})</span>
+                  <div className="update-test-list">
+                    {updates.test_cases.slice(0, 3).map((tc, i) => (
+                      <div key={i} className="test-item">
+                        <span className="test-type">{tc.type}</span>
+                        <strong>{tc.title}</strong>
+                        <p>{tc.expected}</p>
+                      </div>
+                    ))}
+                    {updates.test_cases.length > 3 && (
+                      <p className="muted-copy">+{updates.test_cases.length - 3} more test cases</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              {updates.edge_cases && updates.edge_cases.length > 0 && (
+                <div className="update-field">
+                  <span className="update-label">Edge Cases ({updates.edge_cases.length})</span>
+                  <ul className="update-edge-list">
+                    {updates.edge_cases.map((edge, i) => (
+                      <li key={i}>{edge}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="analysis-card-footer">
+        {cardState === "idle" && hasUpdates && (
+          <button className="action-btn primary" onClick={() => setCardState("approved")}>Approve</button>
+        )}
+        {cardState === "approved" && (
+          <>
+            <button className="action-btn primary" onClick={handleApply}>Apply to JIRA</button>
+            <button className="action-btn secondary" onClick={() => setCardState("idle")}>Cancel</button>
+          </>
+        )}
+        {cardState === "applying" && <span className="status-text">Applying…</span>}
+        {cardState === "applied" && <span className="status-text success">Applied to JIRA</span>}
+        {error && <span className="status-text error">{error}</span>}
+      </div>
     </div>
   );
 }
@@ -184,15 +342,16 @@ export default function HomePage() {
 
   const pendingTickets = useMemo(() => session?.pending_tickets || {}, [session]);
 
-  function pushChatMessage(role, content) {
-    setChatMessages((prev) => [...prev, { role, content }]);
+  function pushChatMessage(role, content, id = null) {
+    setChatMessages((prev) => [...prev, { role, content, ...(id && { id }) }]);
   }
 
   async function handleAnalyze(sentMessage, intent) {
     const source = intent.ticket_key || intent.epic_key || intent.project_key;
     const scopeLabel = intent.ticket_key ? `ticket ${source}` : intent.epic_key ? `epic ${source}` : `project ${source}`;
     pushChatMessage("user", sentMessage);
-    pushChatMessage("assistant", `Analyzing ${scopeLabel}… this may take a moment.`);
+    const tempMsgId = Date.now();
+    pushChatMessage("assistant", `Analyzing ${scopeLabel}…`, tempMsgId);
 
     try {
       const res = await fetch(`${API_BASE_URL}/analyze-tickets`, {
@@ -204,6 +363,8 @@ export default function HomePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Analysis failed.");
 
+      // Remove the temporary analyzing message
+      setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
       setAnalyzeSession(data);
       const a = data.analysis || {};
       const tickets = a.tickets || [];
@@ -211,9 +372,11 @@ export default function HomePage() {
       const major = tickets.flatMap((t) => t.issues_found || []).filter((i) => i.severity === "major").length;
       pushChatMessage(
         "assistant",
-        `Analysis complete. Overall score: ${a.overall_score ?? "—"}/10 across ${data.ticket_count} ticket(s).\n- ${critical} critical issue(s)\n- ${major} major issue(s)\n\n${a.analysis_summary || ""}\n\nReview the details in the panel → You can approve and apply changes per ticket, or type feedback below to refine the analysis.`
+        `Analysis complete. Overall score: ${a.overall_score ?? "—"}/10 across ${data.ticket_count} ticket(s).\n- ${critical} critical issue(s)\n- ${major} major issue(s)\n\n${a.analysis_summary || ""}\n\nReview the details in the panel. You can approve and apply changes per ticket, or type feedback below to refine the analysis.`
       );
     } catch (e) {
+      // Remove the temporary analyzing message on error too
+      setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
       if (e.name !== "AbortError") {
         pushChatMessage("assistant", `Analysis failed: ${e.message}`);
         setError(e.message);
@@ -223,7 +386,8 @@ export default function HomePage() {
 
   async function handleFeedback(sentMessage) {
     pushChatMessage("user", sentMessage);
-    pushChatMessage("assistant", "Refining analysis based on your feedback…");
+    const tempMsgId = Date.now();
+    pushChatMessage("assistant", "Refining analysis…", tempMsgId);
 
     try {
       const res = await fetch(`${API_BASE_URL}/analyze-tickets/${analyzeSession.session_id}/feedback`, {
@@ -235,9 +399,13 @@ export default function HomePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Feedback failed.");
 
+      // Remove the temporary refining message
+      setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
       setAnalyzeSession((prev) => ({ ...prev, analysis: data.analysis }));
-      pushChatMessage("assistant", `Analysis revised (revision ${data.revision}). Review the updated panel →`);
+      pushChatMessage("assistant", `Analysis revised (revision ${data.revision}). Review the updated panel.`);
     } catch (e) {
+      // Remove the temporary refining message on error
+      setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
       if (e.name !== "AbortError") {
         pushChatMessage("assistant", `Feedback failed: ${e.message}`);
         setError(e.message);
@@ -246,7 +414,7 @@ export default function HomePage() {
   }
 
   function handleApplied(ticketKey) {
-    pushChatMessage("assistant", `✓ Applied suggestions to ${ticketKey} in JIRA.`);
+    pushChatMessage("assistant", `Applied suggestions to ${ticketKey} in JIRA.`);
   }
 
   async function handleSubmit(event) {
@@ -357,16 +525,11 @@ export default function HomePage() {
 
   return (
     <main className="page-shell">
-      <section className="hero-band">
-        <div className="hero-copy-block">
-          <span className="eyebrow">Next.js Chat Workspace</span>
-          <h1>Shape product noise into Jira-ready execution through one guided conversation.</h1>
-          <p>
-            Upload docs, paste notes, keep the discussion grounded in context, preview structured ticket drafts,
-            and only create Jira items after human approval.
-          </p>
+      <header className="app-header">
+        <div className="app-header-left">
+          <span className="app-name">Ticket Analyzer</span>
         </div>
-      </section>
+      </header>
 
       <section className="workspace-grid">
         <section className="conversation-panel glass-panel">
@@ -435,7 +598,10 @@ export default function HomePage() {
                 value={message}
                 onInput={handleTextareaInput}
                 onKeyDown={handleKeyDown}
-                placeholder="Message the assistant… (Enter to send, Shift+Enter for new line)"
+                placeholder={analyzeSession
+                  ? "Type feedback to refine the analysis..."
+                  : "Enter a JIRA ticket key (e.g., PROJ-123) or ask me to analyze your tickets..."
+                }
               />
 
               {isSending ? (
@@ -449,20 +615,62 @@ export default function HomePage() {
               )}
             </div>
 
+            {!analyzeSession && (
+              <div className="quick-actions">
+                <button type="button" className="quick-chip" onClick={() => setMessage("Analyze ticket ")}>
+                  🔍 Analyze ticket
+                </button>
+                <button type="button" className="quick-chip" onClick={() => setMessage("Review epic ")}>
+                  📋 Review epic
+                </button>
+                <button type="button" className="quick-chip" onClick={() => setMessage("Check project ")}>
+                  📁 Check project
+                </button>
+              </div>
+            )}
+
             {error ? <p className="error-banner">{error}</p> : null}
           </form>
         </section>
 
         <aside className="inspector-column">
           {analyzeSession ? (
-            <section className="glass-panel side-panel">
+            <section className="glass-panel side-panel analysis-panel">
               <div className="panel-header slim">
                 <div>
-                  <p className="panel-kicker">Analysis</p>
-                  <h3>Ticket review</h3>
+                  <p className="panel-kicker">🔍 Analysis</p>
+                  <h3>{analyzeSession.source || 'Ticket Review'}</h3>
                 </div>
-                <button className="skip-btn" onClick={() => setAnalyzeSession(null)} title="Exit analysis mode">✕ Exit</button>
+                <button className="exit-btn" onClick={() => setAnalyzeSession(null)} title="Exit analysis mode">✕</button>
               </div>
+
+              <div className="analysis-metrics">
+                <div className="metric">
+                  <span className="metric-value">{analyzeSession.analysis?.overall_score ?? '—'}</span>
+                  <span className="metric-label">Overall Score</span>
+                </div>
+                <div className="metric">
+                  <span className="metric-value">{analyzeSession.ticket_count || 0}</span>
+                  <span className="metric-label">Tickets</span>
+                </div>
+                <div className="metric critical">
+                  <span className="metric-value">
+                    {(analyzeSession.analysis?.tickets || []).flatMap(t => t.issues_found || []).filter(i => i.severity === 'critical').length}
+                  </span>
+                  <span className="metric-label">Critical</span>
+                </div>
+                <div className="metric major">
+                  <span className="metric-value">
+                    {(analyzeSession.analysis?.tickets || []).flatMap(t => t.issues_found || []).filter(i => i.severity === 'major').length}
+                  </span>
+                  <span className="metric-label">Major</span>
+                </div>
+              </div>
+
+              {analyzeSession.analysis?.analysis_summary && (
+                <p className="analysis-summary-text">{analyzeSession.analysis.analysis_summary}</p>
+              )}
+
               <div className="analysis-list">
                 {(analyzeSession.analysis?.tickets || []).map((ticket) => (
                   <AnalysisCard
