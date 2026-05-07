@@ -672,6 +672,42 @@ textarea {
 .metric-pill.minor { background: rgba(52, 152, 219, 0.12); color: #3498db; }
 .metric-pill.good { background: rgba(39, 174, 96, 0.12); color: #27ae60; }
 
+.metric-pill svg {
+  display: inline-block;
+  vertical-align: text-bottom;
+  margin-right: 6px;
+}
+
+.analysis-type svg {
+  display: inline-block;
+  vertical-align: text-bottom;
+  margin-right: 6px;
+}
+
+.action-btn svg {
+  display: inline-block;
+  vertical-align: text-bottom;
+  margin-right: 6px;
+}
+
+.status-text svg {
+  display: inline-block;
+  vertical-align: text-bottom;
+  margin-right: 6px;
+}
+
+.expand-btn svg {
+  display: inline-block;
+  vertical-align: text-bottom;
+  margin-right: 6px;
+}
+
+.issues-more-btn svg {
+  display: inline-block;
+  vertical-align: text-bottom;
+  margin-right: 6px;
+}
+
 .issues-preview {
   display: flex;
   flex-direction: column;
@@ -977,6 +1013,26 @@ textarea {
   border-bottom: none;
 }
 
+.panel-kicker {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--teal);
+  margin: 0 0 6px;
+}
+
+.project-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  background: rgba(11, 110, 105, 0.12);
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--teal-deep);
+  letter-spacing: 0.04em;
+}
+
 .role-name {
   font-size: 0.75rem;
   font-weight: 700;
@@ -1270,4 +1326,374 @@ textarea {
     padding: 5px 10px;
     font-size: 0.75rem;
   }
+}
+
+/* ── JIRA-Style Draft Panel ─────────────────────────────────────── */
+
+.draft-section {
+  padding: 16px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+.draft-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.draft-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.draft-panel-header h3 {
+  margin: 4px 0 0;
+  font-size: 1.1rem;
+}
+
+.draft-stats {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.stat-pill {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stat-pill.epic { background: rgba(155, 89, 182, 0.12); color: #9b59b6; }
+.stat-pill.story { background: rgba(52, 152, 219, 0.12); color: #3498db; }
+.stat-pill.task { background: rgba(39, 174, 96, 0.12); color: #27ae60; }
+
+.draft-ticket-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.draft-ticket-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.draft-ticket-card:hover {
+  border-color: rgba(11, 110, 105, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.draft-ticket-card.epic { border-left: 3px solid #9b59b6; }
+.draft-ticket-card.story { border-left: 3px solid #3498db; }
+.draft-ticket-card.task { border-left: 3px solid #27ae60; }
+
+.draft-ticket-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.draft-ticket-header:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.draft-ticket-type-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.draft-ticket-card.epic .draft-ticket-type-badge { background: rgba(155, 89, 182, 0.1); color: #9b59b6; }
+.draft-ticket-card.story .draft-ticket-type-badge { background: rgba(52, 152, 219, 0.1); color: #3498db; }
+.draft-ticket-card.task .draft-ticket-type-badge { background: rgba(39, 174, 96, 0.1); color: #27ae60; }
+
+.draft-ticket-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.draft-ticket-title input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--ink);
+  padding: 0;
+  outline: none;
+}
+
+.draft-ticket-title input::placeholder {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.draft-ticket-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.priority-select {
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  background: white;
+}
+
+.priority-select.priority-highest { border-color: #c0392b; color: #c0392b; }
+.priority-select.priority-high { border-color: #e67e22; color: #e67e22; }
+.priority-select.priority-medium { border-color: #3498db; color: #3498db; }
+.priority-select.priority-low { border-color: #27ae60; color: #27ae60; }
+.priority-select.priority-lowest { border-color: #95a5a6; color: #95a5a6; }
+
+.expand-toggle,
+.delete-btn {
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 150ms ease;
+}
+
+.expand-toggle:hover { color: var(--teal); }
+.delete-btn:hover { color: #c0392b; }
+
+.draft-ticket-body {
+  padding: 0 12px 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.draft-field {
+  margin-top: 12px;
+}
+
+.draft-field label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.draft-field input,
+.draft-field textarea,
+.draft-field select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--ink);
+  resize: vertical;
+}
+
+.draft-field input:focus,
+.draft-field textarea:focus,
+.draft-field select:focus {
+  outline: none;
+  border-color: var(--teal);
+  background: white;
+}
+
+.draft-field-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.draft-field-row .draft-field {
+  flex: 1;
+  margin-top: 0;
+}
+
+.draft-field-row select {
+  width: 100%;
+  padding: 6px 10px;
+}
+
+.ac-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ac-item {
+  display: flex;
+  gap: 8px;
+  font-size: 0.8rem;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 6px;
+}
+
+.ac-num {
+  color: var(--muted);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.ac-text {
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+.draft-panel-footer {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.create-tickets-btn {
+  padding: 12px 20px;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(135deg, #d79a4c, #c9832b);
+  color: #291505;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.create-tickets-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(215, 154, 76, 0.3);
+}
+
+.create-tickets-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.draft-hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
+  margin: 0;
+}
+
+/* ── Project Key Input ───────────────────────────────────────────── */
+
+.project-key-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.project-key-row label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.project-key-input-group {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-key-input {
+  width: 100px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  text-transform: uppercase;
+  background: white;
+}
+
+.project-key-input:focus {
+  outline: none;
+  border-color: var(--teal);
+}
+
+.project-key-hint {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+/* ── Editable Acceptance Criteria ────────────────────────────────── */
+
+.ac-list.editable {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ac-item.editable {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 6px;
+}
+
+.ac-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ac-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  background: white;
+}
+
+.ac-input:focus {
+  outline: none;
+  border-color: var(--teal);
 }

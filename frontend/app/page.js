@@ -4,10 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
-const TICKET_KEY_RE = /\b([A-Z][A-Z0-9]+-\d+)\b/;
-const JIRA_URL_RE = /atlassian\.net\/browse\/([A-Z][A-Z0-9]+-\d+)/i;
-const PROJECT_KEY_RE = /\bproject[:\s]+([A-Z][A-Z0-9]+)\b/i;
-const EPIC_KEYWORD_RE = /\bepic[:\s]+([A-Z][A-Z0-9]+-\d+)\b/i;
+const TICKET_KEY_RE = /\b([A-Za-z][A-Za-z0-9]+-\d+)\b/i;
+const JIRA_URL_RE = /atlassian\.net\/browse\/([A-Za-z][A-Za-z0-9]+-\d+)/i;
+const PROJECT_KEY_RE = /\bproject[:\s]+([A-Za-z][A-Za-z0-9]+)\b/i;
+const EPIC_KEYWORD_RE = /\bepic[:\s]+([A-Za-z][A-Za-z0-9]+-\d+)\b/i;
 const ANALYZE_INTENT_RE = /\b(analyz[e]?|review|inspect|check|audit|improve|fix|assess)\b.*\b(ticket|issue|story|task|epic|jira)\b|\b(ticket|issue|story|task|epic|jira)\b.*\b(analyz[e]?|review|inspect|check|audit|improve|fix|assess)\b/i;
 
 function detectAnalyzeIntent(text) {
@@ -73,16 +73,248 @@ function SummarySection({ title, items, emptyLabel }) {
   );
 }
 
+function DraftTicketCard({ ticket, type, index, onUpdate, onDelete }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [edited, setEdited] = useState({ ...ticket });
+
+  const issueTypes = ["Epic", "Story", "Task", "Bug"];
+  const priorities = ["Highest", "High", "Medium", "Low", "Lowest"];
+
+  const handleChange = (field, value) => {
+    const updated = { ...edited, [field]: value };
+    setEdited(updated);
+    onUpdate(index, type, updated);
+  };
+
+  const handleACChange = (acIndex, field, value) => {
+    const updatedAC = [...(edited.acceptance_criteria || [])];
+    updatedAC[acIndex] = { ...updatedAC[acIndex], [field]: value };
+    handleChange('acceptance_criteria', updatedAC);
+  };
+
+  return (
+    <div className={`draft-ticket-card ${type.toLowerCase()} ${isExpanded ? 'expanded' : ''}`}>
+      <div className="draft-ticket-header" onClick={() => setIsExpanded(!isExpanded)}>
+        <div className="draft-ticket-type-badge">{type}</div>
+        <div className="draft-ticket-title">
+          <input
+            type="text"
+            value={edited.summary || ''}
+            onChange={(e) => handleChange('summary', e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="Ticket summary..."
+          />
+        </div>
+        <div className="draft-ticket-actions">
+          <select
+            value={edited.priority || 'Medium'}
+            onChange={(e) => handleChange('priority', e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            className={`priority-select priority-${(edited.priority || 'medium').toLowerCase()}`}
+          >
+            {priorities.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <button className="expand-toggle" onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              {isExpanded ? <path d="m18 15-6-6-6 6"/> : <path d="m9 18 6-6-6-6"/>}
+            </svg>
+          </button>
+          <button className="delete-btn" onClick={(e) => { e.stopPropagation(); onDelete(index, type); }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="draft-ticket-body">
+          <div className="draft-field-row">
+            <label>Issue Type</label>
+            <select value={type} onChange={(e) => handleChange('issue_type', e.target.value)}>
+              {issueTypes.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          
+          <div className="draft-field">
+            <label>Description</label>
+            <textarea
+              value={edited.description || ''}
+              onChange={(e) => handleChange('description', e.target.value)}
+              placeholder="Add a description..."
+              rows={3}
+            />
+          </div>
+
+          <div className="draft-field-row">
+            <div className="draft-field">
+              <label>Story Points</label>
+              <input
+                type="number"
+                value={edited.story_points || ''}
+                onChange={(e) => handleChange('story_points', e.target.value)}
+                placeholder="0"
+                min="0"
+              />
+            </div>
+            <div className="draft-field">
+              <label>Labels</label>
+              <input
+                type="text"
+                value={(edited.labels || []).join(', ')}
+                onChange={(e) => handleChange('labels', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                placeholder="label1, label2"
+              />
+            </div>
+          </div>
+
+          {edited.acceptance_criteria && edited.acceptance_criteria.length > 0 && (
+            <div className="draft-field">
+              <label>Acceptance Criteria ({edited.acceptance_criteria.length})</label>
+              <div className="ac-list editable">
+                {edited.acceptance_criteria.map((ac, i) => (
+                  <div key={i} className="ac-item editable">
+                    <span className="ac-num">{i + 1}.</span>
+                    <div className="ac-fields">
+                      <input 
+                        type="text" 
+                        value={ac.given || ''} 
+                        onChange={(e) => handleACChange(i, 'given', e.target.value)}
+                        placeholder="GIVEN..."
+                        className="ac-input"
+                      />
+                      <input 
+                        type="text" 
+                        value={ac.when || ''} 
+                        onChange={(e) => handleACChange(i, 'when', e.target.value)}
+                        placeholder="WHEN..."
+                        className="ac-input"
+                      />
+                      <input 
+                        type="text" 
+                        value={ac.then || ''} 
+                        onChange={(e) => handleACChange(i, 'then', e.target.value)}
+                        placeholder="THEN..."
+                        className="ac-input"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DraftPanel({ tickets, onUpdate, onDelete, onCreate, isCreating, canCreate, projectKey, onProjectKeyChange }) {
+  const handleUpdate = (index, type, updatedTicket) => {
+    const key = type.toLowerCase() + 's';
+    const list = [...(tickets[key] || [])];
+    list[index] = updatedTicket;
+    onUpdate({ ...tickets, [key]: list });
+  };
+
+  const handleDelete = (index, type) => {
+    const key = type.toLowerCase() + 's';
+    const list = (tickets[key] || []).filter((_, i) => i !== index);
+    onUpdate({ ...tickets, [key]: list });
+  };
+
+  const epicCount = (tickets.epics || []).length;
+  const storyCount = (tickets.stories || []).length;
+  const taskCount = (tickets.tasks || []).length;
+  const totalCount = epicCount + storyCount + taskCount;
+
+  return (
+    <div className="draft-panel">
+      <div className="draft-panel-header">
+        <div>
+          <p className="panel-kicker">Draft</p>
+          <h3>Pending ticket overview</h3>
+        </div>
+        <div className="draft-stats">
+          <span className="stat-pill epic">{epicCount} Epics</span>
+          <span className="stat-pill story">{storyCount} Stories</span>
+          <span className="stat-pill task">{taskCount} Tasks</span>
+        </div>
+      </div>
+
+      <div className="project-key-row">
+        <label>JIRA Project Key</label>
+        <div className="project-key-input-group">
+          <input
+            type="text"
+            value={projectKey || ''}
+            onChange={(e) => onProjectKeyChange(e.target.value.toUpperCase())}
+            placeholder="e.g., KAN"
+            className="project-key-input"
+          />
+          {!projectKey && <span className="project-key-hint">Required to create tickets</span>}
+        </div>
+      </div>
+
+      {totalCount === 0 ? (
+        <p className="muted-copy">No tickets drafted yet. Start a conversation to create tickets.</p>
+      ) : (
+        <div className="draft-ticket-list">
+          {(tickets.epics || []).map((ticket, i) => (
+            <DraftTicketCard
+              key={`epic-${i}`}
+              ticket={ticket}
+              type="Epic"
+              index={i}
+              onUpdate={handleUpdate}
+              onDelete={handleDelete}
+            />
+          ))}
+          {(tickets.stories || []).map((ticket, i) => (
+            <DraftTicketCard
+              key={`story-${i}`}
+              ticket={ticket}
+              type="Story"
+              index={i}
+              onUpdate={handleUpdate}
+              onDelete={handleDelete}
+            />
+          ))}
+          {(tickets.tasks || []).map((ticket, i) => (
+            <DraftTicketCard
+              key={`task-${i}`}
+              ticket={ticket}
+              type="Task"
+              index={i}
+              onUpdate={handleUpdate}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="draft-panel-footer">
+        <button
+          className="create-tickets-btn"
+          onClick={onCreate}
+          disabled={!canCreate || isCreating || totalCount === 0}
+        >
+          {isCreating ? "Creating in JIRA..." : `Create ${totalCount} ticket(s) in JIRA`}
+        </button>
+        {!canCreate && totalCount > 0 && (
+          <p className="draft-hint">Specify a project key (e.g., "in project KAN") to enable creation</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AnalysisCard({ ticket, sessionId, onApplied }) {
   const [cardState, setCardState] = useState("idle");
   const [expanded, setExpanded] = useState(false);
   const [showingUpdates, setShowingUpdates] = useState(false);
   const [error, setError] = useState("");
-
-  const issues = ticket.issues_found || [];
-  const updates = ticket.suggested_updates || {};
-  const score = ticket.quality_score;
-  const roleFindings = ticket.role_findings || {};
+  const [showingRoleFindings, setShowingRoleFindings] = useState(false);
 
   async function handleApply() {
     setCardState("applying");
@@ -113,25 +345,34 @@ function AnalysisCard({ ticket, sessionId, onApplied }) {
     scrum_master: "Scrum Master"
   };
 
-  const hasRoleFindings = Object.keys(roleFindings).length > 0;
-  const hasUpdates = Object.keys(updates).length > 0;
+  const hasRoleFindings = Object.keys(ticket.role_findings || {}).length > 0;
+  const hasUpdates = Object.keys(ticket.suggested_updates || {}).length > 0;
 
   // Compact inline metrics
-  const criticalCount = issues.filter(i => i.severity === "critical").length;
-  const majorCount = issues.filter(i => i.severity === "major").length;
-  const minorCount = issues.filter(i => i.severity === "minor").length;
+  const criticalCount = (ticket.issues_found || []).filter(i => i.severity === "critical").length;
+  const majorCount = (ticket.issues_found || []).filter(i => i.severity === "major").length;
+  const minorCount = (ticket.issues_found || []).filter(i => i.severity === "minor").length;
 
   return (
     <div className={`analysis-card ${cardState} ${expanded ? 'expanded' : ''}`}>
       <div className="analysis-card-header">
         <div className="analysis-card-title">
           <span className="analysis-key">{ticket.key}</span>
-          {ticket.issue_type && <span className="analysis-type">{ticket.issue_type}</span>}
+          {ticket.issue_type && (
+            <span className="analysis-type">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                {ticket.issue_type === 'Epic' ? <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/> : 
+                 ticket.issue_type === 'Story' ? <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/> :
+                 <circle cx="12" cy="12" r="10"/>}
+              </svg>
+              {ticket.issue_type}
+            </span>
+          )}
         </div>
         <div className="analysis-card-meta">
-          <div className={`score-bar score-${score >= 8 ? "good" : score >= 5 ? "mid" : "bad"}`}>
-            <div className="score-fill" style={{ width: `${score * 10}%` }} />
-            <span className="score-text">{score}/10</span>
+          <div className={`score-bar score-${ticket.quality_score >= 8 ? "good" : ticket.quality_score >= 5 ? "mid" : "bad"}`}>
+            <div className="score-fill" style={{ width: `${ticket.quality_score * 10}%` }} />
+            <span className="score-text">{ticket.quality_score}/10</span>
           </div>
         </div>
       </div>
@@ -140,33 +381,56 @@ function AnalysisCard({ ticket, sessionId, onApplied }) {
 
       {/* Inline Metrics Row */}
       <div className="analysis-metrics-row">
-        {criticalCount > 0 && <span className="metric-pill critical">{criticalCount} Critical</span>}
-        {majorCount > 0 && <span className="metric-pill major">{majorCount} Major</span>}
-        {minorCount > 0 && <span className="metric-pill minor">{minorCount} Minor</span>}
-        {issues.length === 0 && <span className="metric-pill good">No issues</span>}
+        {criticalCount > 0 && (
+          <span className="metric-pill critical">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 22h20L12 2zm0 3l7.5 15h-15L12 5z"/></svg>
+            {criticalCount} Critical
+          </span>
+        )}
+        {majorCount > 0 && (
+          <span className="metric-pill major">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
+            {majorCount} Major
+          </span>
+        )}
+        {minorCount > 0 && (
+          <span className="metric-pill minor">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/></svg>
+            {minorCount} Minor
+          </span>
+        )}
+        {(ticket.issues_found || []).length === 0 && (
+          <span className="metric-pill good">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6L9 17l-5-5"/></svg>
+            No issues
+          </span>
+        )}
       </div>
 
       {/* Collapsed Issues Preview (first 2 only) */}
-      {issues.length > 0 && (
+      {(ticket.issues_found || []).length > 0 && (
         <div className="issues-preview">
-          {issues.slice(0, 2).map((issue, i) => (
+          {(ticket.issues_found || []).slice(0, 2).map((issue, i) => (
             <div key={i} className={`issue-chip-mini sev-${issue.severity}`}>
               <span className="issue-sev-mini">{issue.severity}</span>
               <span className="issue-desc-mini">{issue.description.substring(0, 60)}{issue.description.length > 60 ? '…' : ''}</span>
             </div>
           ))}
-          {issues.length > 2 && (
+          {(ticket.issues_found || []).length > 2 && (
             <button className="issues-more-btn" onClick={() => setExpanded(!expanded)}>
-              [{expanded ? 'v' : '>'}] {issues.length - 2} more issues
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                {expanded ? <path d="m18 15-6-6-6 6"/> : <path d="m9 18 6-6-6-6"/>}
+              </svg>
+              {(ticket.issues_found || []).length - 2} more issues
             </button>
           )}
         </div>
       )}
 
       {/* Expanded Issues */}
-      {expanded && issues.length > 0 && (
+      {expanded && (ticket.issues_found || []).length > 0 && (
         <div className="issues-list-expanded">
-          {issues.map((issue, i) => (
+          {(ticket.issues_found || []).map((issue, i) => (
             <div key={i} className={`issue-chip sev-${issue.severity}`}>
               <div className="issue-header">
                 <span className="issue-sev">{issue.severity}</span>
@@ -183,12 +447,15 @@ function AnalysisCard({ ticket, sessionId, onApplied }) {
 
       {hasRoleFindings && (
         <div className="role-findings-section">
-          <button className="expand-btn compact" onClick={() => setExpanded(!expanded)}>
-            [{expanded ? 'v' : '>'}] Role Findings ({Object.keys(roleFindings).length})
+          <button className="expand-btn compact" onClick={() => setShowingRoleFindings(!showingRoleFindings)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              {showingRoleFindings ? <path d="m18 15-6-6-6 6"/> : <path d="m9 18 6-6-6-6"/>}
+            </svg>
+            Role Findings ({Object.keys(ticket.role_findings || {}).length})
           </button>
-          {expanded && (
+          {showingRoleFindings && (
             <div className="role-findings-list">
-              {Object.entries(roleFindings).map(([role, finding]) => (
+              {Object.entries(ticket.role_findings || {}).map(([role, finding]) => (
                 <div key={role} className="role-finding">
                   <span className="role-name">{roleNames[role] || role}</span>
                   <span className="role-text">{finding}</span>
@@ -202,45 +469,48 @@ function AnalysisCard({ ticket, sessionId, onApplied }) {
       {hasUpdates && cardState !== "applied" && (
         <div className="suggested-updates-section">
           <button className="expand-btn compact" onClick={() => setShowingUpdates(!showingUpdates)}>
-            [{showingUpdates ? 'v' : '>'}] Suggested Updates
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              {showingUpdates ? <path d="m18 15-6-6-6 6"/> : <path d="m9 18 6-6-6-6"/>}
+            </svg>
+            Suggested Updates
           </button>
           {showingUpdates && (
             <div className="updates-detail">
-              {updates.summary && (
+              {(ticket.suggested_updates || {}).summary && (
                 <div className="update-field">
                   <span className="update-label">Summary</span>
-                  <p className="update-value">{updates.summary}</p>
+                  <p className="update-value">{(ticket.suggested_updates || {}).summary}</p>
                 </div>
               )}
-              {updates.description && (
+              {(ticket.suggested_updates || {}).description && (
                 <div className="update-field">
                   <span className="update-label">Description</span>
-                  <p className="update-value">{updates.description}</p>
+                  <p className="update-value">{(ticket.suggested_updates || {}).description}</p>
                 </div>
               )}
               <div className="update-fields-row">
-                {updates.priority && (
-                  <span className="update-priority">{updates.priority}</span>
+                {(ticket.suggested_updates || {}).priority && (
+                  <span className="update-priority">{(ticket.suggested_updates || {}).priority}</span>
                 )}
-                {updates.story_points && (
-                  <span className="update-points">{updates.story_points} pts</span>
+                {(ticket.suggested_updates || {}).story_points && (
+                  <span className="update-points">{(ticket.suggested_updates || {}).story_points} pts</span>
                 )}
               </div>
-              {updates.labels && updates.labels.length > 0 && (
+              {(ticket.suggested_updates || {}).labels && (ticket.suggested_updates || {}).labels.length > 0 && (
                 <div className="update-field">
                   <span className="update-label">Labels</span>
                   <div className="update-labels">
-                    {updates.labels.map((label, i) => (
+                    {(ticket.suggested_updates || {}).labels.map((label, i) => (
                       <span key={i} className="update-label-tag">{label}</span>
                     ))}
                   </div>
                 </div>
               )}
-              {updates.acceptance_criteria && updates.acceptance_criteria.length > 0 && (
+              {(ticket.suggested_updates || {}).acceptance_criteria && (ticket.suggested_updates || {}).acceptance_criteria.length > 0 && (
                 <div className="update-field">
                   <span className="update-label">Acceptance Criteria</span>
                   <div className="update-ac-list">
-                    {updates.acceptance_criteria.map((ac, i) => (
+                    {(ticket.suggested_updates || {}).acceptance_criteria.map((ac, i) => (
                       <div key={i} className="ac-item">
                         <strong>GIVEN</strong> {ac.given}<br/>
                         <strong>WHEN</strong> {ac.when}<br/>
@@ -250,28 +520,28 @@ function AnalysisCard({ ticket, sessionId, onApplied }) {
                   </div>
                 </div>
               )}
-              {updates.test_cases && updates.test_cases.length > 0 && (
+              {(ticket.suggested_updates || {}).test_cases && (ticket.suggested_updates || {}).test_cases.length > 0 && (
                 <div className="update-field">
-                  <span className="update-label">Test Cases ({updates.test_cases.length})</span>
+                  <span className="update-label">Test Cases ({(ticket.suggested_updates || {}).test_cases.length})</span>
                   <div className="update-test-list">
-                    {updates.test_cases.slice(0, 3).map((tc, i) => (
+                    {(ticket.suggested_updates || {}).test_cases.slice(0, 3).map((tc, i) => (
                       <div key={i} className="test-item">
                         <span className="test-type">{tc.type}</span>
                         <strong>{tc.title}</strong>
                         <p>{tc.expected}</p>
                       </div>
                     ))}
-                    {updates.test_cases.length > 3 && (
-                      <p className="muted-copy">+{updates.test_cases.length - 3} more test cases</p>
+                    {(ticket.suggested_updates || {}).test_cases.length > 3 && (
+                      <p className="muted-copy">+{(ticket.suggested_updates || {}).test_cases.length - 3} more test cases</p>
                     )}
                   </div>
                 </div>
               )}
-              {updates.edge_cases && updates.edge_cases.length > 0 && (
+              {(ticket.suggested_updates || {}).edge_cases && (ticket.suggested_updates || {}).edge_cases.length > 0 && (
                 <div className="update-field">
-                  <span className="update-label">Edge Cases ({updates.edge_cases.length})</span>
+                  <span className="update-label">Edge Cases ({(ticket.suggested_updates || {}).edge_cases.length})</span>
                   <ul className="update-edge-list">
-                    {updates.edge_cases.map((edge, i) => (
+                    {(ticket.suggested_updates || {}).edge_cases.map((edge, i) => (
                       <li key={i}>{edge}</li>
                     ))}
                   </ul>
@@ -285,23 +555,47 @@ function AnalysisCard({ ticket, sessionId, onApplied }) {
       {/* Actions */}
       <div className="analysis-card-footer">
         {cardState === "idle" && hasUpdates && (
-          <button className="action-btn primary" onClick={() => setCardState("approved")}>Approve</button>
+          <button className="action-btn primary" onClick={() => setCardState("approved")}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6L9 17l-5-5"/></svg>
+            Approve
+          </button>
         )}
         {cardState === "approved" && (
           <>
-            <button className="action-btn primary" onClick={handleApply}>Apply to JIRA</button>
-            <button className="action-btn secondary" onClick={() => setCardState("idle")}>Cancel</button>
+            <button className="action-btn primary" onClick={handleApply}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
+              Apply to JIRA
+            </button>
+            <button className="action-btn secondary" onClick={() => setCardState("idle")}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              Cancel
+            </button>
           </>
         )}
-        {cardState === "applying" && <span className="status-text">Applying…</span>}
-        {cardState === "applied" && <span className="status-text success">Applied to JIRA</span>}
-        {error && <span className="status-text error">{error}</span>}
+        {cardState === "applying" && (
+          <span className="status-text">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            Applying…
+          </span>
+        )}
+        {cardState === "applied" && (
+          <span className="status-text success">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6L9 17l-5-5"/></svg>
+            Applied to JIRA
+          </span>
+        )}
+        {error && (
+          <span className="status-text error">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+            {error}
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
-export default function HomePage() {
+function HomePage() {
   const [session, setSession] = useState(null);
   const [analyzeSession, setAnalyzeSession] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
@@ -457,6 +751,12 @@ export default function HomePage() {
       const formData = new FormData();
       formData.append("message", sentMessage);
       files.forEach((file) => formData.append("files", file));
+      
+      // Extract project key from message if mentioned
+      const projectKeyMatch = sentMessage.match(/(?:project|in project|project key|project:)\s*([A-Z][A-Z0-9]{1,9})/i);
+      if (projectKeyMatch) {
+        formData.append("project_key", projectKeyMatch[1].toUpperCase());
+      }
 
       const response = await fetch(`${API_BASE_URL}/chat/sessions/${session.session_id}/messages`, {
         method: "POST",
@@ -490,6 +790,8 @@ export default function HomePage() {
 
     setIsConfirming(true);
     setError("");
+    const tempMsgId = Date.now();
+    pushChatMessage("assistant", "Creating tickets in JIRA…", tempMsgId);
 
     try {
       const response = await fetch(`${API_BASE_URL}/chat/sessions/${session.session_id}/confirm`, {
@@ -502,8 +804,20 @@ export default function HomePage() {
       }
 
       setSession(data);
+      
+      // Remove temporary message and show success feedback
+      setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
+      const created = data.last_created || [];
+      if (created.length > 0) {
+        const createdList = created.map(t => `  • ${t.key}: ${t.summary}`).join('\n');
+        pushChatMessage("assistant", `Successfully created ${created.length} ticket(s) in JIRA:\n${createdList}`);
+      } else {
+        pushChatMessage("assistant", "Tickets have been created in JIRA.");
+      }
     } catch (nextError) {
+      setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
       setError(nextError.message);
+      pushChatMessage("assistant", `Failed to create tickets: ${nextError.message}`);
     } finally {
       setIsConfirming(false);
     }
@@ -535,17 +849,9 @@ export default function HomePage() {
         <section className="conversation-panel glass-panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Conversation</p>
+              <p className="panel-kicker">Conversation {session?.project_key && <span className="project-badge">Project: {session.project_key}</span>}</p>
               <h2>Context-friendly ticket shaping</h2>
             </div>
-            <button
-              className="confirm-button"
-              type="button"
-              disabled={!session?.awaiting_confirmation || isConfirming}
-              onClick={handleConfirm}
-            >
-              {isConfirming ? "Creating..." : "Approve and create Jira tickets"}
-            </button>
           </div>
 
           <div className="message-stream">
@@ -686,16 +992,34 @@ export default function HomePage() {
               </div>
             </section>
           ) : (
-            <section className="glass-panel side-panel">
-              <div className="panel-header slim">
-                <div>
-                  <p className="panel-kicker">Draft</p>
-                  <h3>Pending ticket overview</h3>
-                </div>
-              </div>
-              <SummarySection title="Epics" items={pendingTickets.epics || []} emptyLabel="No epics drafted yet." />
-              <SummarySection title="Stories" items={pendingTickets.stories || []} emptyLabel="No stories drafted yet." />
-              <SummarySection title="Tasks" items={pendingTickets.tasks || []} emptyLabel="No tasks drafted yet." />
+            <section className="glass-panel side-panel draft-section">
+              <DraftPanel
+                tickets={pendingTickets}
+                onUpdate={(updatedTickets) => {
+                  setSession(prev => prev ? { ...prev, pending_tickets: updatedTickets } : prev);
+                }}
+                onDelete={() => {}}
+                onCreate={handleConfirm}
+                isCreating={isConfirming}
+                canCreate={session?.awaiting_confirmation && session?.project_key}
+                projectKey={session?.project_key || ''}
+                onProjectKeyChange={async (key) => {
+                  if (!session?.session_id || !key) return;
+                  try {
+                    const res = await fetch(`${API_BASE_URL}/chat/sessions/${session.session_id}/project-key`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ project_key: key })
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      setSession(data);
+                    }
+                  } catch (e) {
+                    console.error('Failed to update project key:', e);
+                  }
+                }}
+              />
             </section>
           )}
 
@@ -735,3 +1059,5 @@ export default function HomePage() {
     </main>
   );
 }
+
+export default HomePage;
