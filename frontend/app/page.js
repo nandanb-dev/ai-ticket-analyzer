@@ -978,9 +978,9 @@ function HomePage() {
               )}
 
               <div className="analysis-list">
-                {(analyzeSession.analysis?.tickets || []).map((ticket) => (
+                {(analyzeSession.analysis?.tickets || []).map((ticket, index) => (
                   <AnalysisCard
-                    key={ticket.key}
+                    key={`${ticket.key}-${analyzeSession.analysis?.overall_score}-${index}`}
                     ticket={ticket}
                     sessionId={analyzeSession.session_id}
                     onApplied={handleApplied}
