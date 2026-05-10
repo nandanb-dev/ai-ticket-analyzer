@@ -49,6 +49,19 @@ async def get_session(session_id: str) -> dict:
     return _session_response(session)
 
 
+class ProjectKeyUpdate(BaseModel):
+    project_key: str
+
+@router.post("/sessions/{session_id}/project-key")
+async def update_project_key(session_id: str, payload: ProjectKeyUpdate) -> dict:
+    session = chat_sessions.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    
+    updated = chat_sessions.update_project_key(session_id, payload.project_key)
+    return _session_response(updated)
+
+
 @router.post("/sessions/{session_id}/messages")
 async def post_message(
     session_id: str,

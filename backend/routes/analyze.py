@@ -11,6 +11,7 @@ Workflow:
 """
 
 from typing import List, Optional
+import json
 
 import anyio
 from fastapi import APIRouter, Body, HTTPException
@@ -192,7 +193,20 @@ async def feedback_on_analysis(session_id: str, req: FeedbackRequest):
             )
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        # Fallback: recover JSON from model/parsing error text
+        message = str(exc)
+        if "Invalid json output" in message:
+            try:
+                recovered_analysis = _extract_first_json_object(message)
+                updated_session = analysis_sessions.set_analysis(session_id, recovered_analysis)
+                return {
+                    "session_id": session_id,
+                    "revision": len(updated_session.revision_history),
+                    "analysis": recovered_analysis,
+                }
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=message)
 
     try:
         updated_session = analysis_sessions.set_analysis(session_id, result["analysis"])
@@ -251,3 +265,18 @@ async def apply_suggestions(session_id: str, req: Optional[ApplyRequest] = Body(
         "applied": result.get("applied", []),
         "skipped": result.get("skipped", []),
     }
+
+def _extract_first_json_object(text: str) -> dict:
+    """
+    Best-effort recovery when model output includes preamble text before JSON.
+    Example: 'Invalid json output: Revised analysis (JSON): { ... }'
+    """
+    cleaned = text.strip()
+    cleaned = cleaned.replace("```json", "```").replace("```", "")
+    start = cleaned.find("{")
+    if start == -1:
+        raise ValueError("No JSON object found in text.")
+    obj, _ = json.JSONDecoder().raw_decode(cleaned[start:])
+    if not isinstance(obj, dict):
+        raise ValueError("Recovered JSON is not an object.")
+    return obj
