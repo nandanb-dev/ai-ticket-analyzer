@@ -10,6 +10,7 @@ Workflow:
   4. GET  /analyze-tickets/{id}          → retrieve current analysis for a session
 """
 
+import re
 from typing import List, Optional
 import json
 
@@ -19,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from agents.analyzer_agent import run_analyzer_agent, run_apply_agent, run_refine_agent
 from services.analysis_sessions import analysis_sessions
+from services.confluence import get_page_content_as_text
 
 router = APIRouter(prefix="/analyze-tickets", tags=["analyze"])
 
@@ -38,6 +40,14 @@ class AnalyzeRequest(BaseModel):
         default=None,
         description="Single JIRA ticket key (e.g. PROJ-123). Provide exactly one of project_key, epic_key, or ticket_key.",
     )
+    confluence_page: Optional[str] = Field(
+        default=None,
+        description=(
+            "Confluence page URL or page ID to fetch as additional context. "
+            "Supports URLs like https://domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Title "
+            "or just the page ID (e.g. '123456')."
+        ),
+    )
     context: str = Field(
         default="",
         description=(
@@ -49,6 +59,7 @@ class AnalyzeRequest(BaseModel):
     model_config = {"json_schema_extra": {
         "examples": [{
             "project_key": "SHOP",
+            "confluence_page": "https://mycompany.atlassian.net/wiki/spaces/PROJ/pages/123456/Product+Requirements",
             "context": "This is an e-commerce platform. The checkout flow must support guest checkout, promo codes, and PayPal."
         }]
     }}
@@ -81,6 +92,36 @@ class ApplyRequest(BaseModel):
     )
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _extract_confluence_page_id(url_or_id: str) -> str:
+    """
+    Extract Confluence page ID from a URL or return as-is if already an ID.
+    
+    Supports URLs like:
+    - https://domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page+Title
+    - https://domain.atlassian.net/wiki/pages/viewpage.action?pageId=123456
+    """
+    # If it's just digits, assume it's already a page ID
+    if url_or_id.isdigit():
+        return url_or_id
+    
+    # Try to extract from /pages/{id}/ pattern
+    match = re.search(r'/pages/(\d+)', url_or_id)
+    if match:
+        return match.group(1)
+    
+    # Try to extract from pageId= query param
+    match = re.search(r'pageId=(\d+)', url_or_id)
+    if match:
+        return match.group(1)
+    
+    raise HTTPException(
+        status_code=422,
+        detail=f"Could not extract page ID from Confluence URL: {url_or_id}"
+    )
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post(
@@ -94,6 +135,9 @@ async def analyze_tickets(req: AnalyzeRequest):
     then run a multi-role AI analysis (PM, Dev, QA, Security, DevOps, UX) and
     return per-ticket findings with concrete suggested updates.
 
+    Optionally provide a **confluence_page** URL or page ID to include as additional context
+    (e.g., SRS, PRD, or design specs) for more accurate analysis.
+
     A `session_id` is returned so you can later `/feedback` or `/apply` updates.
     """
     provided_scopes = [bool(req.project_key), bool(req.epic_key), bool(req.ticket_key)]
@@ -103,12 +147,36 @@ async def analyze_tickets(req: AnalyzeRequest):
             detail="Provide exactly one of project_key, epic_key, or ticket_key.",
         )
 
+    # Build combined context from user input and optional Confluence page
+    combined_context = req.context or ""
+    confluence_title = None
+    
+    if req.confluence_page and req.confluence_page.strip():
+        try:
+            page_id = _extract_confluence_page_id(req.confluence_page.strip())
+            page_data = get_page_content_as_text(page_id)
+            confluence_title = page_data.get("title", "Confluence Page")
+            confluence_content = page_data.get("content", "")
+            
+            if confluence_content.strip():
+                if combined_context:
+                    combined_context += f"\n\n--- Confluence: {confluence_title} ---\n{confluence_content}"
+                else:
+                    combined_context = f"--- Confluence: {confluence_title} ---\n{confluence_content}"
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch Confluence page: {str(e)}"
+            )
+
     # Create session before running the agent so we always have an id to return
     session = analysis_sessions.create_session(
         project_key=req.project_key or "",
         epic_key=req.epic_key or "",
         ticket_key=req.ticket_key or "",
-        user_context=req.context,
+        user_context=combined_context,
     )
 
     try:
@@ -117,7 +185,7 @@ async def analyze_tickets(req: AnalyzeRequest):
                 project_key=req.project_key,
                 epic_key=req.epic_key,
                 ticket_key=req.ticket_key,
-                user_context=req.context,
+                user_context=combined_context,
             )
         )
     except RuntimeError as exc:
