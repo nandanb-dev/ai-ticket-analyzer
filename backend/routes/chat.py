@@ -81,6 +81,7 @@ async def post_message(
         session = chat_sessions.update_project_key(session_id, project_key)
 
     uploaded_names = []
+    failed_files = []
     for file in files:
         content = await file.read()
         text = await anyio.to_thread.run_sync(
@@ -89,6 +90,8 @@ async def post_message(
         if text.strip():
             chat_sessions.add_attachment(session_id, file.filename or "uploaded-file", text)
             uploaded_names.append(file.filename or "uploaded-file")
+        else:
+            failed_files.append(file.filename or "uploaded-file")
 
     display_message = message.strip()
     if uploaded_names and not display_message:
@@ -132,6 +135,8 @@ async def post_message(
 
     response = _session_response(session)
     response["decision"] = result["decision"]
+    if failed_files:
+        response["failed_files"] = failed_files
     return response
 
 

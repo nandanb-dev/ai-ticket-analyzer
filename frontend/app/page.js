@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "react-toastify";
+import { Paperclip, FileText, X, Send, Search, Square } from "lucide-react";
 import { detectAnalyzeIntent } from "./utils";
 import { ANALYZE_INTENT_RE } from "./constants";
 import API_BASE_URL from "./config";
@@ -81,12 +83,14 @@ export default function HomePage() {
         "assistant",
         `Analysis complete. Overall score: ${a.overall_score ?? "—"}/10 across ${data.ticket_count} ticket(s).\n- ${critical} critical issue(s)\n- ${major} major issue(s)\n\n${a.analysis_summary || ""}\n\nReview the details in the panel. You can approve and apply changes per ticket, or type feedback below to refine the analysis.`
       );
+      toast.success(`Analysis complete — score ${a.overall_score ?? "—"}/10 across ${data.ticket_count} ticket(s)`);
     } catch (e) {
       // Remove the temporary analyzing message on error too
       setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
       if (e.name !== "AbortError") {
         pushChatMessage("assistant", `Analysis failed: ${e.message}`);
         setError(e.message);
+        toast.error(`Analysis failed: ${e.message}`);
       }
     }
   }
@@ -110,12 +114,14 @@ export default function HomePage() {
       setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
       setAnalyzeSession((prev) => ({ ...prev, analysis: data.analysis }));
       pushChatMessage("assistant", `Analysis revised (revision ${data.revision}). Review the updated panel.`);
+      toast.success(`Analysis revised (revision ${data.revision})`);
     } catch (e) {
       // Remove the temporary refining message on error
       setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
       if (e.name !== "AbortError") {
         pushChatMessage("assistant", `Feedback failed: ${e.message}`);
         setError(e.message);
+        toast.error(`Feedback failed: ${e.message}`);
       }
     }
   }
@@ -183,8 +189,17 @@ export default function HomePage() {
       }
 
       setSession(data);
+      
+      // Show warning for failed file extractions
+      if (data.failed_files && data.failed_files.length > 0) {
+        const fileList = data.failed_files.join(", ");
+        toast.error(`Could not extract text from: ${fileList}. Only text-based (non-scanned) PDFs are supported.`);
+      }
     } catch (nextError) {
-      if (nextError.name !== "AbortError") setError(nextError.message);
+      if (nextError.name !== "AbortError") {
+        setError(nextError.message);
+        toast.error(nextError.message);
+      }
     } finally {
       setOptimisticMessage("");
       setIsSending(false);
@@ -220,17 +235,22 @@ export default function HomePage() {
       
       // Remove temporary message and show success feedback
       setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
-      const created = data.last_created || [];
-      if (created.length > 0) {
-        const createdList = created.map(t => `  • ${t.key}: ${t.summary}`).join('\n');
-        pushChatMessage("assistant", `Successfully created ${created.length} ticket(s) in JIRA:\n${createdList}`);
+      const createdTickets = data.last_created
+        ? Object.values(data.last_created).flat()
+        : [];
+      if (createdTickets.length > 0) {
+        const createdList = createdTickets.map(t => `  • ${t.key}: ${t.summary}`).join('\n');
+        pushChatMessage("assistant", `Successfully created ${createdTickets.length} ticket(s) in JIRA:\n${createdList}`);
+        toast.success(`Created ${createdTickets.length} ticket(s) in JIRA`);
       } else {
         pushChatMessage("assistant", "Tickets have been created in JIRA.");
+        toast.success("Tickets have been created in JIRA.");
       }
     } catch (nextError) {
       setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
       setError(nextError.message);
       pushChatMessage("assistant", `Failed to create tickets: ${nextError.message}`);
+      toast.error(`Failed to create tickets: ${nextError.message}`);
     } finally {
       setIsConfirming(false);
     }
@@ -293,14 +313,34 @@ export default function HomePage() {
           </div>
 
           <form className="composer-panel" onSubmit={handleSubmit}>
+            {files.length > 0 && (
+              <div className="attached-files">
+                {files.map((file, index) => (
+                  <div key={`${file.name}-${index}`} className="file-chip">
+                    <FileText size={16} className="file-icon" />
+                    <span className="file-name">{file.name}</span>
+                    <button
+                      type="button"
+                      className="remove-file-btn"
+                      onClick={() => {
+                        setFiles((prev) => prev.filter((_, i) => i !== index));
+                      }}
+                      title="Remove file"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="composer-bar">
               <button
                 type="button"
                 className="icon-btn"
-                title={files.length ? `${files.length} file(s) ready` : "Attach files"}
+                title="Attach files"
                 onClick={() => fileInputRef.current?.click()}
               >
-                📎{files.length > 0 && <span className="attach-badge">{files.length}</span>}
+                <Paperclip size={20} />
               </button>
 
               <input
@@ -325,28 +365,14 @@ export default function HomePage() {
 
               {isSending ? (
                 <button className="icon-btn stop-btn" type="button" onClick={handleStop} title="Stop">
-                  ⏹
+                  <Square size={20} fill="currentColor" />
                 </button>
               ) : (
                 <button className="icon-btn send-icon-btn" type="submit" title="Send">
-                  ➤
+                  <Send size={20} />
                 </button>
               )}
             </div>
-
-            {!analyzeSession && (
-              <div className="quick-actions">
-                <button type="button" className="quick-chip" onClick={() => setMessage("Analyze ticket ")}>
-                  🔍 Analyze ticket
-                </button>
-                <button type="button" className="quick-chip" onClick={() => setMessage("Review epic ")}>
-                  📋 Review epic
-                </button>
-                <button type="button" className="quick-chip" onClick={() => setMessage("Check project ")}>
-                  📁 Check project
-                </button>
-              </div>
-            )}
 
             {error ? <p className="error-banner">{error}</p> : null}
           </form>
@@ -357,10 +383,10 @@ export default function HomePage() {
             <section className="glass-panel side-panel analysis-panel">
               <div className="panel-header slim">
                 <div>
-                  <p className="panel-kicker">🔍 Analysis</p>
+                  <p className="panel-kicker"><Search size={14} style={{display: 'inline', verticalAlign: 'middle', marginRight: '4px'}} /> Analysis</p>
                   <h3>{analyzeSession.source || 'Ticket Review'}</h3>
                 </div>
-                <button className="exit-btn" onClick={() => setAnalyzeSession(null)} title="Exit analysis mode">✕</button>
+                <button className="exit-btn" onClick={() => setAnalyzeSession(null)} title="Exit analysis mode"><X size={16} /></button>
               </div>
 
               <div className="analysis-metrics">
@@ -430,6 +456,7 @@ export default function HomePage() {
                     }
                   } catch (e) {
                     console.error('Failed to update project key:', e);
+                    toast.error('Failed to update project key');
                   }
                 }}
               />

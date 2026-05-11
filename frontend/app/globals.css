@@ -271,6 +271,58 @@ label span {
   border-top: 1px solid var(--line);
 }
 
+.attached-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 8px;
+  border-radius: 16px;
+  background: rgba(11, 110, 105, 0.08);
+  border: 1px solid rgba(11, 110, 105, 0.2);
+  font-size: 0.9rem;
+  color: var(--teal-deep);
+}
+
+.file-icon {
+  flex-shrink: 0;
+  color: var(--teal-deep);
+}
+
+.file-name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remove-file-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--teal-deep);
+  opacity: 0.6;
+  transition: opacity 150ms ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.remove-file-btn:hover {
+  opacity: 1;
+}
+
 .composer-bar {
   display: flex;
   align-items: center;
