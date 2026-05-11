@@ -62,6 +62,23 @@ async def update_project_key(session_id: str, payload: ProjectKeyUpdate) -> dict
     return _session_response(updated)
 
 
+class AttachmentUpdate(BaseModel):
+    index: int
+    content: str
+
+@router.post("/sessions/{session_id}/attachments")
+async def update_attachment(session_id: str, payload: AttachmentUpdate) -> dict:
+    session = chat_sessions.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    
+    if payload.index < 0 or payload.index >= len(session.attachments):
+        raise HTTPException(status_code=400, detail="Invalid attachment index")
+    
+    updated = chat_sessions.update_attachment(session_id, payload.index, payload.content)
+    return _session_response(updated)
+
+
 @router.post("/sessions/{session_id}/messages")
 async def post_message(
     session_id: str,

@@ -129,12 +129,15 @@ label span {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  position: sticky;
+  top: 80px;
+  height: calc(100vh - 80px);
   max-height: calc(100vh - 80px);
+  overflow: hidden;
 }
 
 .side-panel {
   padding: 22px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
@@ -487,6 +490,8 @@ textarea {
 .inspector-column {
   display: grid;
   gap: 18px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
 }
 
 .summary-section + .summary-section {
@@ -520,9 +525,95 @@ textarea {
   margin: 0;
 }
 
+.attachment-card {
+  overflow: visible;
+}
+
 .attachment-card p {
   white-space: pre-wrap;
   word-break: break-word;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.attachment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.attachment-header strong {
+  flex: 1;
+  word-break: break-word;
+}
+
+.attachment-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.attachment-action-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: white;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.attachment-action-btn.edit {
+  color: var(--teal-deep);
+  border-color: var(--teal);
+}
+
+.attachment-action-btn.edit:hover {
+  background: rgba(11, 110, 105, 0.05);
+}
+
+.attachment-action-btn.save {
+  color: white;
+  background: var(--teal);
+  border-color: var(--teal);
+}
+
+.attachment-action-btn.save:hover {
+  background: var(--teal-deep);
+}
+
+.attachment-action-btn.cancel {
+  color: var(--muted);
+}
+
+.attachment-action-btn.cancel:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.attachment-editor {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 200px;
+  max-height: 400px;
+  background: white;
+  color: var(--text);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.attachment-editor:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(11, 110, 105, 0.1);
 }
 
 .result-panel {

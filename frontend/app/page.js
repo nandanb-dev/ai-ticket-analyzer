@@ -20,6 +20,8 @@ export default function HomePage() {
   const [isConfirming, setIsConfirming] = useState(false);
   const [optimisticMessage, setOptimisticMessage] = useState("");
   const [error, setError] = useState("");
+  const [editingAttachment, setEditingAttachment] = useState(null);
+  const [editedContent, setEditedContent] = useState("");
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
   const abortRef = useRef(null);
@@ -130,9 +132,31 @@ export default function HomePage() {
     pushChatMessage("assistant", `Applied suggestions to ${ticketKey} in JIRA.`);
   }
 
+  async function handleSaveAttachment(index) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/chat/sessions/${session.session_id}/attachments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ index, content: editedContent }),
+      });
+      
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to update attachment");
+      }
+      
+      setSession(data);
+      setEditingAttachment(null);
+      setEditedContent("");
+      toast.success("Attachment updated");
+    } catch (error) {
+      toast.error(`Failed to update attachment: ${error.message}`);
+    }
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
-    if (!message.trim()) return;
+    if (!message.trim() && files.length === 0) return;
     if (!session?.session_id) return;
 
     const sentMessage = message.trim();
@@ -475,8 +499,51 @@ export default function HomePage() {
               <div className="summary-list">
                 {session.attachments.map((attachment, index) => (
                   <div className="summary-card attachment-card" key={`${attachment.name}-${index}`}>
-                    <strong>{attachment.name}</strong>
-                    <p>{attachment.preview}</p>
+                    <div className="attachment-header">
+                      <strong>{attachment.name}</strong>
+                      {editingAttachment === index ? (
+                        <div className="attachment-actions">
+                          <button
+                            className="attachment-action-btn save"
+                            onClick={() => handleSaveAttachment(index)}
+                            title="Save changes"
+                          >
+                            Save
+                          </button>
+                          <button
+                            className="attachment-action-btn cancel"
+                            onClick={() => {
+                              setEditingAttachment(null);
+                              setEditedContent("");
+                            }}
+                            title="Cancel"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="attachment-action-btn edit"
+                          onClick={() => {
+                            setEditingAttachment(index);
+                            setEditedContent(attachment.content);
+                          }}
+                          title="Edit content"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                    {editingAttachment === index ? (
+                      <textarea
+                        className="attachment-editor"
+                        value={editedContent}
+                        onChange={(e) => setEditedContent(e.target.value)}
+                        rows={10}
+                      />
+                    ) : (
+                      <p>{attachment.preview}</p>
+                    )}
                   </div>
                 ))}
               </div>
