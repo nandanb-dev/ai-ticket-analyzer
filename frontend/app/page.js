@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
-import { Paperclip, FileText, X, Send, Search, Square } from "lucide-react";
+import { Paperclip, FileText, X, Send, Search, Square, Trash2 } from "lucide-react";
 import { detectAnalyzeIntent } from "./utils";
 import { ANALYZE_INTENT_RE } from "./constants";
 import API_BASE_URL from "./config";
 import MessageBubble from "./components/MessageBubble";
 import DraftPanel from "./components/DraftPanel";
 import AnalysisCard from "./components/AnalysisCard";
+import ConfirmModal from "./components/ConfirmModal";
 
 export default function HomePage() {
   const [session, setSession] = useState(null);
@@ -22,6 +23,8 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const [editingAttachment, setEditingAttachment] = useState(null);
   const [editedContent, setEditedContent] = useState("");
+  const [appliedTickets, setAppliedTickets] = useState(new Set());
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: "", message: "", onConfirm: null });
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
   const abortRef = useRef(null);
@@ -77,6 +80,7 @@ export default function HomePage() {
       // Remove the temporary analyzing message
       setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
       setAnalyzeSession(data);
+      setAppliedTickets(new Set()); // Reset applied tickets for new analysis
       const a = data.analysis || {};
       const tickets = a.tickets || [];
       const critical = tickets.flatMap((t) => t.issues_found || []).filter((i) => i.severity === "critical").length;
@@ -128,8 +132,26 @@ export default function HomePage() {
     }
   }
 
-  function handleApplied(ticketKey) {
+  function handleApplied(ticketKey, data) {
     pushChatMessage("assistant", `Applied suggestions to ${ticketKey} in JIRA.`);
+    
+    // Track applied ticket
+    setAppliedTickets((prev) => {
+      const updated = new Set(prev);
+      updated.add(ticketKey);
+      
+      // Check if all tickets have been applied
+      const totalTickets = analyzeSession?.analysis?.tickets?.length || 0;
+      if (updated.size >= totalTickets && totalTickets > 0) {
+        // All tickets applied - close the analysis panel
+        setTimeout(() => {
+          setAnalyzeSession(null);
+          setAppliedTickets(new Set());
+        }, 1500); // Small delay so user sees the success state
+      }
+      
+      return updated;
+    });
   }
 
   async function handleSaveAttachment(index) {
@@ -152,6 +174,37 @@ export default function HomePage() {
     } catch (error) {
       toast.error(`Failed to update attachment: ${error.message}`);
     }
+  }
+
+  function handleDeleteAttachment(index, filename) {
+    setConfirmModal({
+      isOpen: true,
+      title: "Remove Attachment",
+      message: `Are you sure you want to remove "${filename}" from context? This action cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null });
+        
+        try {
+          const response = await fetch(`${API_BASE_URL}/chat/sessions/${session.session_id}/attachments`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ index }),
+          });
+          
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.detail || "Failed to remove attachment");
+          }
+          
+          setSession(data);
+          setEditingAttachment(null);
+          setEditedContent("");
+          toast.success("Attachment removed");
+        } catch (error) {
+          toast.error(`Failed to remove attachment: ${error.message}`);
+        }
+      }
+    });
   }
 
   async function handleSubmit(event) {
@@ -521,18 +574,27 @@ export default function HomePage() {
                             Cancel
                           </button>
                         </div>
-                      ) : (
-                        <button
-                          className="attachment-action-btn edit"
-                          onClick={() => {
-                            setEditingAttachment(index);
-                            setEditedContent(attachment.content);
-                          }}
-                          title="Edit content"
-                        >
-                          Edit
-                        </button>
-                      )}
+                      ) : editingAttachment === null ? (
+                        <div className="attachment-actions">
+                          {/* <button
+                            className="attachment-action-btn edit"
+                            onClick={() => {
+                              setEditingAttachment(index);
+                              setEditedContent(attachment.content);
+                            }}
+                            title="Edit content"
+                          >
+                            Edit
+                          </button> */}
+                          <button
+                            className="attachment-action-btn delete"
+                            onClick={() => handleDeleteAttachment(index, attachment.name)}
+                            title="Remove attachment"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                     {editingAttachment === index ? (
                       <textarea
@@ -563,6 +625,17 @@ export default function HomePage() {
           </section>
         </aside>
       </section>
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null })}
+        confirmText="Remove"
+        cancelText="Cancel"
+        variant="danger"
+      />
     </main>
   );
 }

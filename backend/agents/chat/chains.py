@@ -44,8 +44,11 @@ def get_decision_chain():
             "You are routing a product-ops chat assistant. "
             "Pick exactly one action: respond, generate_tickets, confirm_tickets, ask_for_more_context. "
             "Choose confirm_tickets only when the user is explicitly approving ticket creation or forced_action says so. "
-            "Choose generate_tickets only when the user wants ticket decomposition or Jira-ready tickets. "
-            "Choose ask_for_more_context when ticket generation is requested but the available information is too thin. "
+            "Choose generate_tickets when the user wants ticket decomposition or Jira-ready tickets. "
+            "If the user explicitly requests ticket generation (using words like 'generate', 'draft', 'create tickets') "
+            "and there are uploaded documents OR substantial conversation history, choose generate_tickets. "
+            "Only choose ask_for_more_context if ticket generation is requested but there are NO uploaded documents "
+            "AND NO meaningful requirements in the conversation history. "
             "Otherwise choose respond."
         ),
         (

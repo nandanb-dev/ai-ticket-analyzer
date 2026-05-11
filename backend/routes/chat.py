@@ -79,6 +79,22 @@ async def update_attachment(session_id: str, payload: AttachmentUpdate) -> dict:
     return _session_response(updated)
 
 
+class AttachmentDelete(BaseModel):
+    index: int
+
+@router.delete("/sessions/{session_id}/attachments")
+async def delete_attachment(session_id: str, payload: AttachmentDelete) -> dict:
+    session = chat_sessions.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    
+    if payload.index < 0 or payload.index >= len(session.attachments):
+        raise HTTPException(status_code=400, detail="Invalid attachment index")
+    
+    updated = chat_sessions.remove_attachment(session_id, payload.index)
+    return _session_response(updated)
+
+
 @router.post("/sessions/{session_id}/messages")
 async def post_message(
     session_id: str,
