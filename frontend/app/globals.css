@@ -1702,9 +1702,57 @@ textarea {
   background: white;
 }
 
+.project-key-input.loading {
+  width: auto;
+  color: var(--muted);
+  font-weight: 400;
+  text-transform: none;
+  border-color: transparent;
+  background: transparent;
+}
+
 .project-key-input:focus {
   outline: none;
   border-color: var(--teal);
+}
+
+.project-select-wrapper {
+  position: relative;
+  display: inline-block;
+  min-width: 200px;
+}
+
+.project-key-select {
+  width: 100%;
+  padding: 6px 32px 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  font-family: inherit;
+  background: white;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.project-key-select:focus {
+  outline: none;
+  border-color: var(--teal);
+}
+
+.project-key-select option {
+  padding: 8px;
+}
+
+.select-icon {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--muted);
 }
 
 .project-key-hint {

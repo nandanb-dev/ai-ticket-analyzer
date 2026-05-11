@@ -11,6 +11,37 @@ def _validate_jira_credentials() -> None:
         raise HTTPException(status_code=500, detail="JIRA credentials not configured in .env")
 
 
+def get_all_projects() -> list[dict]:
+    """Fetch all JIRA projects the user has access to."""
+    _validate_jira_credentials()
+    
+    resp = requests.get(
+        f"{JIRA_URL}/rest/api/3/project/search",
+        params={"maxResults": 100, "orderBy": "name"},
+        auth=(JIRA_USERNAME, JIRA_API_TOKEN),
+        headers={"Accept": "application/json"},
+        timeout=15,
+    )
+    
+    if not resp.ok:
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=f"Failed to fetch JIRA projects: {resp.text}"
+        )
+    
+    data = resp.json()
+    projects = data.get("values", [])
+    
+    return [
+        {
+            "key": p.get("key"),
+            "name": p.get("name"),
+            "id": p.get("id"),
+        }
+        for p in projects
+    ]
+
+
 def get_project_issue_types(project_key: str) -> list[str]:
     """Get available issue types for a project."""
     _validate_jira_credentials()
