@@ -2,9 +2,11 @@ from typing import TypedDict, Optional
 
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, END
 
-from config import OPENAI_API_KEY
+from config import OPENAI_API_KEY, GOOGLE_API_KEY, GROQ_API_KEY
 from prompts.testcase_generation import TESTCASE_PROMPT
 
 
@@ -23,7 +25,18 @@ def _get_chain():
     if _chain:
         return _chain
 
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.2, api_key=OPENAI_API_KEY)
+    # if not OPENAI_API_KEY:
+    #     raise RuntimeError("OPENAI_API_KEY is not configured in .env")
+    # llm = ChatOpenAI(model="gpt-4o", temperature=0.2, api_key=OPENAI_API_KEY)
+
+    if not GOOGLE_API_KEY:
+        raise RuntimeError("GOOGLE_API_KEY is not configured in .env")
+    llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", temperature=0.2)
+
+    # if not GROQ_API_KEY:
+    #     raise RuntimeError("GROQ_API_KEY is not configured in .env")
+    # llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2, api_key=GROQ_API_KEY)
+
     _chain = TESTCASE_PROMPT | llm | JsonOutputParser()
     return _chain
 
