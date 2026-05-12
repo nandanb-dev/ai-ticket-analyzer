@@ -11,6 +11,29 @@ def _validate_jira_credentials() -> None:
         raise HTTPException(status_code=500, detail="JIRA credentials not configured in .env")
 
 
+def get_project_issue_types(project_key: str) -> list[str]:
+    """Get available issue types for a project."""
+    _validate_jira_credentials()
+    
+    # First try to get project-specific issue types
+    resp = requests.get(
+        f"{JIRA_URL}/rest/api/3/issue/createmeta",
+        params={"projectKeys": project_key, "expand": "projects.issuetypes"},
+        auth=(JIRA_USERNAME, JIRA_API_TOKEN),
+        headers={"Accept": "application/json"},
+        timeout=15,
+    )
+    
+    if resp.ok:
+        data = resp.json()
+        projects = data.get("projects", [])
+        if projects:
+            return [it.get("name", "").lower() for it in projects[0].get("issuetypes", [])]
+    
+    # Fallback: return common defaults
+    return ["epic", "story", "task", "bug", "improvement", "new feature"]
+
+
 def _text_to_adf(text: str) -> dict:
     """Convert plain text with newlines into a proper Atlassian Document Format (ADF) doc."""
     paragraphs = []
@@ -134,19 +157,56 @@ def create_issue(
     return resp.json()
 
 
+def _map_issue_type(desired_type: str, available_types: list[str]) -> str:
+    """Map desired issue type to available type in project."""
+    desired_lower = desired_type.lower()
+    
+    # Direct match
+    if desired_lower in available_types:
+        return desired_type
+    
+    # Common mappings
+    mappings = {
+        "epic": ["epic"],
+        "story": ["story", "user story", "feature"],
+        "task": ["task", "sub-task", "subtask", "bug", "improvement"],
+    }
+    
+    for candidate in mappings.get(desired_lower, [desired_lower]):
+        for available in available_types:
+            if candidate in available or available in candidate:
+                # Return the available type with proper casing
+                return next((t for t in ["Epic", "Story", "Task", "Bug", "Improvement"] 
+                           if t.lower() == available), available.title())
+    
+    # Fallback: use first available type
+    if available_types:
+        return available_types[0].title()
+    
+    return desired_type
+
+
 def push_tickets(project_key: str, ticket_data: dict) -> dict:
     epics   = ticket_data.get("epics", [])
     stories = ticket_data.get("stories", [])
     tasks   = ticket_data.get("tasks", [])
 
     created = {"epics": [], "stories": [], "tasks": []}
+    
+    # Get available issue types for the project
+    available_types = get_project_issue_types(project_key)
+    
+    # Map desired types to available types
+    epic_type = _map_issue_type("Epic", available_types)
+    story_type = _map_issue_type("Story", available_types)
+    task_type = _map_issue_type("Task", available_types)
 
     # Epics — created first so stories can link to them
     epic_keys = []
     for epic in epics:
         result = create_issue(
             project_key=project_key,
-            issue_type="Epic",
+            issue_type=epic_type,
             summary=epic["summary"],
             description=epic["description"],
             priority=epic.get("priority", "Medium"),
@@ -164,7 +224,7 @@ def push_tickets(project_key: str, ticket_data: dict) -> dict:
 
         result = create_issue(
             project_key=project_key,
-            issue_type="Story",
+            issue_type=story_type,
             summary=story["summary"],
             description=description,
             priority=story.get("priority", "Medium"),
@@ -182,7 +242,7 @@ def push_tickets(project_key: str, ticket_data: dict) -> dict:
 
         result = create_issue(
             project_key=project_key,
-            issue_type="Task",
+            issue_type=task_type,
             summary=task["summary"],
             description=description,
             priority=task.get("priority", "Medium"),
