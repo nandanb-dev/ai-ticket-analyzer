@@ -3,9 +3,10 @@ analyzer_agent.py
 ─────────────────
 LangGraph-based agent that:
   1. Fetches tickets from JIRA (project or epic scope)
-  2. Analyses every ticket with the multi-role analysis prompt
-  3. Can refine the analysis based on user feedback
-  4. Applies approved suggested updates back to JIRA
+  2. Retrieves relevant historical context from the RAG knowledge base
+  3. Analyses every ticket with the multi-role analysis prompt (RAG-grounded)
+  4. Can refine the analysis based on user feedback
+  5. Applies approved suggested updates back to JIRA
 """
 
 import json
@@ -38,6 +39,10 @@ class AnalyzerState(TypedDict):
     analysis: Optional[dict]
     apply_keys: Optional[List[str]]   # ticket keys the user wants to apply updates to
     apply_only_approved: bool
+
+    # RAG
+    rag_context: Optional[str]              # retrieved historical context (injected into prompt)
+    rag_citations: Optional[List[dict]]     # source attribution for the retrieved context
 
     # Output
     result: Optional[dict]
@@ -118,13 +123,59 @@ def _fetch_tickets_node(state: AnalyzerState) -> dict:
         return {"error": f"Failed to fetch tickets: {exc}"}
 
 
+def _rag_context_node(state: AnalyzerState) -> dict:
+    """
+    Retrieve historical context from the RAG knowledge base.
+
+    Builds a composite query from ticket summaries and user context,
+    then runs hybrid retrieval + reranking and constructs a token-efficient
+    context string for injection into the analysis prompt.
+    """
+    try:
+        from database import is_db_available
+        if not is_db_available():
+            return {"rag_context": "", "rag_citations": []}
+
+        raw_tickets = state.get("raw_tickets") or []
+        user_context = state.get("user_context") or ""
+
+        # Build a representative query from ticket summaries + user context
+        ticket_summaries = " | ".join(
+            t.get("summary", "") for t in raw_tickets[:10] if t.get("summary")
+        )
+        query_parts = [p for p in [ticket_summaries, user_context] if p.strip()]
+        if not query_parts:
+            return {"rag_context": "", "rag_citations": []}
+
+        query = " ".join(query_parts)[:1000]  # cap query length
+
+        from rag.retrieval import retrieve
+        from rag.context_builder import build_context, format_citations_for_response
+
+        results = retrieve(query)
+        if not results:
+            return {"rag_context": "", "rag_citations": []}
+
+        rag_context, citations = build_context(results)
+        serialized_citations = format_citations_for_response(citations)
+
+        return {"rag_context": rag_context, "rag_citations": serialized_citations}
+
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("RAG context retrieval failed (non-fatal): %s", exc)
+        return {"rag_context": "", "rag_citations": []}
+
+
 def _analyze_node(state: AnalyzerState) -> dict:
     """Run the multi-role analysis against all fetched tickets."""
     try:
         tickets_json = json.dumps(state["raw_tickets"], indent=2, ensure_ascii=False)
+        rag_context = state.get("rag_context") or "No historical context available."
         analysis = _get_analysis_chain().invoke({
             "tickets_json": tickets_json,
             "user_context": state.get("user_context") or "No additional context provided.",
+            "rag_context": rag_context,
         })
         return {"analysis": analysis}
     except Exception as exc:
@@ -216,6 +267,7 @@ def _build_analysis_result(state: AnalyzerState) -> dict:
                 else f"epic:{state['epic_key']}" if state.get("epic_key")
                 else f"project:{state['project_key']}"
             ),
+            "rag_citations": state.get("rag_citations") or [],
         }
     }
 
@@ -225,6 +277,10 @@ def _build_analysis_result(state: AnalyzerState) -> dict:
 def _route_initial(state: AnalyzerState) -> str:
     if state.get("error"):
         return "end"
+    return "rag_context"
+
+
+def _route_after_rag(state: AnalyzerState) -> str:
     return "analyze"
 
 
@@ -238,10 +294,12 @@ def _route_after_analyze(state: AnalyzerState) -> str:
 
 _analyze_graph = StateGraph(AnalyzerState)
 _analyze_graph.add_node("fetch", _fetch_tickets_node)
+_analyze_graph.add_node("rag_context", _rag_context_node)
 _analyze_graph.add_node("analyze", _analyze_node)
 _analyze_graph.add_node("build_result", _build_analysis_result)
 _analyze_graph.set_entry_point("fetch")
-_analyze_graph.add_conditional_edges("fetch", _route_initial, {"analyze": "analyze", "end": END})
+_analyze_graph.add_conditional_edges("fetch", _route_initial, {"rag_context": "rag_context", "end": END})
+_analyze_graph.add_edge("rag_context", "analyze")
 _analyze_graph.add_conditional_edges("analyze", _route_after_analyze, {"build_result": "build_result", "end": END})
 _analyze_graph.add_edge("build_result", END)
 _analyze_agent = _analyze_graph.compile()
