@@ -42,6 +42,17 @@ def _db_available() -> bool:
         return False
 
 
+def _as_json(value, default):
+    if value is None:
+        return default
+    if isinstance(value, (str, bytes, bytearray)):
+        try:
+            return json.loads(value)
+        except Exception:
+            return default
+    return value
+
+
 def _row_to_session(row) -> AnalysisSession:
     return AnalysisSession(
         session_id=str(row[0]),
@@ -49,8 +60,8 @@ def _row_to_session(row) -> AnalysisSession:
         epic_key=row[2] or "",
         ticket_key=row[3] or "",
         user_context=row[4] or "",
-        analysis=row[5] or {},
-        revision_history=row[6] or [],
+        analysis=_as_json(row[5], {}),
+        revision_history=_as_json(row[6], []),
     )
 
 
@@ -70,7 +81,7 @@ class _PostgresAnalysisStore:
                     INSERT INTO analysis_sessions
                         (project_key, epic_key, ticket_key, user_context, analysis, revision_history)
                     VALUES (%s, %s, %s, %s, '{}', '[]')
-                    RETURNING id, project_key, epic_key, ticket_key, user_context,
+                    RETURNING session_id, project_key, epic_key, ticket_key, user_context,
                               analysis, revision_history
                     """,
                     (project_key.strip(), epic_key.strip(), ticket_key.strip(), user_context),
@@ -84,9 +95,9 @@ class _PostgresAnalysisStore:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT id, project_key, epic_key, ticket_key, user_context,
+                        SELECT session_id, project_key, epic_key, ticket_key, user_context,
                                analysis, revision_history
-                        FROM analysis_sessions WHERE id = %s
+                        FROM analysis_sessions WHERE session_id = %s
                         """,
                         (session_id,),
                     )
@@ -111,8 +122,8 @@ class _PostgresAnalysisStore:
                         END,
                         analysis = %s,
                         updated_at = NOW()
-                    WHERE id = %s
-                    RETURNING id, project_key, epic_key, ticket_key, user_context,
+                    WHERE session_id = %s
+                    RETURNING session_id, project_key, epic_key, ticket_key, user_context,
                               analysis, revision_history
                     """,
                     (json.dumps(analysis), session_id),
@@ -126,7 +137,7 @@ class _PostgresAnalysisStore:
         from database import get_connection
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM analysis_sessions WHERE id = %s", (session_id,))
+                cur.execute("DELETE FROM analysis_sessions WHERE session_id = %s", (session_id,))
 
 
 # ── In-memory backend (original implementation) ───────────────────────────────

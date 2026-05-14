@@ -45,15 +45,26 @@ def _db_available() -> bool:
         return False
 
 
+def _as_json(value, default):
+    if value is None:
+        return default
+    if isinstance(value, (str, bytes, bytearray)):
+        try:
+            return json.loads(value)
+        except Exception:
+            return default
+    return value
+
+
 def _row_to_session(row) -> ChatSession:
     return ChatSession(
         session_id=str(row[0]),
         project_key=row[1] or "",
-        messages=row[2] or [],
-        attachments=row[3] or [],
-        pending_tickets=row[4],
+        messages=_as_json(row[2], []),
+        attachments=_as_json(row[3], []),
+        pending_tickets=_as_json(row[4], None),
         awaiting_confirmation=bool(row[5]),
-        last_created=row[6],
+        last_created=_as_json(row[6], None),
     )
 
 
@@ -68,7 +79,7 @@ class _PostgresChatStore:
                     """
                     INSERT INTO chat_sessions (project_key, messages, attachments)
                     VALUES (%s, '[]', '[]')
-                    RETURNING id, project_key, messages, attachments,
+                    RETURNING session_id, project_key, messages, attachments,
                               pending_tickets, awaiting_confirmation, last_created
                     """,
                     (project_key.strip(),),
@@ -82,9 +93,9 @@ class _PostgresChatStore:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT id, project_key, messages, attachments,
+                        SELECT session_id, project_key, messages, attachments,
                                pending_tickets, awaiting_confirmation, last_created
-                        FROM chat_sessions WHERE id = %s
+                        FROM chat_sessions WHERE session_id = %s
                         """,
                         (session_id,),
                     )
@@ -103,19 +114,17 @@ class _PostgresChatStore:
                     SET messages = (
                         CASE
                           WHEN jsonb_array_length(messages) >= %s
-                          THEN (messages -> (%s - %s::int))
+                          THEN (messages - 0)
                           ELSE messages
                         END
                         || %s::jsonb
                     ),
                     updated_at = NOW()
-                    WHERE id = %s
-                    RETURNING id, project_key, messages, attachments,
+                    WHERE session_id = %s
+                    RETURNING session_id, project_key, messages, attachments,
                               pending_tickets, awaiting_confirmation, last_created
                     """,
                     (
-                        _MAX_MESSAGES_PER_SESSION,
-                        _MAX_MESSAGES_PER_SESSION,
                         _MAX_MESSAGES_PER_SESSION,
                         json.dumps([{"role": role, "content": content}]),
                         session_id,
@@ -137,14 +146,14 @@ class _PostgresChatStore:
                     SET attachments = (
                         CASE
                           WHEN jsonb_array_length(attachments) >= %s
-                          THEN attachments -> 1
+                                                    THEN (attachments - 0)
                           ELSE attachments
                         END
                         || %s::jsonb
                     ),
                     updated_at = NOW()
-                    WHERE id = %s
-                    RETURNING id, project_key, messages, attachments,
+                                        WHERE session_id = %s
+                                        RETURNING session_id, project_key, messages, attachments,
                               pending_tickets, awaiting_confirmation, last_created
                     """,
                     (
@@ -165,8 +174,8 @@ class _PostgresChatStore:
                 cur.execute(
                     """
                     UPDATE chat_sessions SET project_key = %s, updated_at = NOW()
-                    WHERE id = %s
-                    RETURNING id, project_key, messages, attachments,
+                    WHERE session_id = %s
+                    RETURNING session_id, project_key, messages, attachments,
                               pending_tickets, awaiting_confirmation, last_created
                     """,
                     (project_key.strip(), session_id),
@@ -186,8 +195,8 @@ class _PostgresChatStore:
                     """
                     UPDATE chat_sessions
                     SET pending_tickets = %s, awaiting_confirmation = %s, updated_at = NOW()
-                    WHERE id = %s
-                    RETURNING id, project_key, messages, attachments,
+                    WHERE session_id = %s
+                    RETURNING session_id, project_key, messages, attachments,
                               pending_tickets, awaiting_confirmation, last_created
                     """,
                     (
@@ -208,8 +217,8 @@ class _PostgresChatStore:
                 cur.execute(
                     """
                     UPDATE chat_sessions SET last_created = %s, updated_at = NOW()
-                    WHERE id = %s
-                    RETURNING id, project_key, messages, attachments,
+                    WHERE session_id = %s
+                    RETURNING session_id, project_key, messages, attachments,
                               pending_tickets, awaiting_confirmation, last_created
                     """,
                     (json.dumps(created) if created is not None else None, session_id),

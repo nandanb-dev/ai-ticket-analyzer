@@ -280,10 +280,6 @@ def _route_initial(state: AnalyzerState) -> str:
     return "rag_context"
 
 
-def _route_after_rag(state: AnalyzerState) -> str:
-    return "analyze"
-
-
 def _route_after_analyze(state: AnalyzerState) -> str:
     if state.get("error"):
         return "end"

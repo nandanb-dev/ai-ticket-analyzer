@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,14 +11,17 @@ from routes.rag import router as rag_router
 from routes.tickets import router as tickets_router
 
 
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize PostgreSQL schema (no-op if DATABASE_URL is not set)
     try:
         from database import initialize_schema
         initialize_schema()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Database schema initialization failed during startup: %s", exc)
     yield
 
 

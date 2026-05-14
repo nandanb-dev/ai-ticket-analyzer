@@ -66,11 +66,11 @@ def ingest_docx(content: bytes, filename: str, title: Optional[str] = None) -> d
         Ingestion result dict: {document_id, chunk_count, embedded_count}.
     """
     text = _extract_docx_text(content)
-    text = clean_document(text, source_type="pdf")
+    text = clean_document(text, source_type="docx")
 
     source_id = _stable_id(filename)
     doc = DocumentRecord(
-        source_type="pdf",
+        source_type="docx",
         source_id=source_id,
         title=title or filename,
         raw_content=text,
@@ -100,9 +100,9 @@ def ingest_text(
     Returns:
         Ingestion result dict: {document_id, chunk_count, embedded_count}.
     """
-    cleaned = clean_document(text, source_type="pdf")
+    cleaned = clean_document(text, source_type="text")
     doc = DocumentRecord(
-        source_type="pdf",
+        source_type="text",
         source_id=source_id,
         title=title,
         raw_content=cleaned,

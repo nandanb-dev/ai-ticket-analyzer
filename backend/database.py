@@ -20,7 +20,7 @@ from typing import Generator, Optional
 
 import psycopg2
 import psycopg2.pool
-from psycopg2.extras import RealDictCursor, register_uuid
+from psycopg2.extras import register_default_json, register_default_jsonb, register_uuid
 
 from config import DATABASE_URL, EMBEDDING_DIMENSIONS
 
@@ -45,6 +45,8 @@ def get_pool() -> Optional[psycopg2.pool.ThreadedConnectionPool]:
             dsn=DATABASE_URL,
         )
         register_uuid()
+        register_default_json(globally=True)
+        register_default_jsonb(globally=True)
         logger.info("PostgreSQL connection pool created.")
     except Exception as exc:
         logger.warning("PostgreSQL unavailable – in-memory fallback active. (%s)", exc)
@@ -57,15 +59,18 @@ def is_db_available() -> bool:
     pool = get_pool()
     if pool is None:
         return False
+    conn = None
     try:
         conn = pool.getconn()
         with conn.cursor() as cur:
             cur.execute("SELECT 1")
         conn.commit()
-        pool.putconn(conn)
         return True
     except Exception:
         return False
+    finally:
+        if conn is not None:
+            pool.putconn(conn)
 
 
 @contextmanager
@@ -105,6 +110,7 @@ def get_connection() -> Generator:
 _SCHEMA_SQL = """
 -- pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ── RAG: document store ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS rag_documents (
