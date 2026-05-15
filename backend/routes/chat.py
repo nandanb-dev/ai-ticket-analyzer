@@ -62,6 +62,39 @@ async def update_project_key(session_id: str, payload: ProjectKeyUpdate) -> dict
     return _session_response(updated)
 
 
+class AttachmentUpdate(BaseModel):
+    index: int
+    content: str
+
+@router.post("/sessions/{session_id}/attachments")
+async def update_attachment(session_id: str, payload: AttachmentUpdate) -> dict:
+    session = chat_sessions.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    
+    if payload.index < 0 or payload.index >= len(session.attachments):
+        raise HTTPException(status_code=400, detail="Invalid attachment index")
+    
+    updated = chat_sessions.update_attachment(session_id, payload.index, payload.content)
+    return _session_response(updated)
+
+
+class AttachmentDelete(BaseModel):
+    index: int
+
+@router.delete("/sessions/{session_id}/attachments")
+async def delete_attachment(session_id: str, payload: AttachmentDelete) -> dict:
+    session = chat_sessions.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    
+    if payload.index < 0 or payload.index >= len(session.attachments):
+        raise HTTPException(status_code=400, detail="Invalid attachment index")
+    
+    updated = chat_sessions.remove_attachment(session_id, payload.index)
+    return _session_response(updated)
+
+
 @router.post("/sessions/{session_id}/messages")
 async def post_message(
     session_id: str,
@@ -81,6 +114,7 @@ async def post_message(
         session = chat_sessions.update_project_key(session_id, project_key)
 
     uploaded_names = []
+    failed_files = []
     for file in files:
         content = await file.read()
         text = await anyio.to_thread.run_sync(
@@ -89,6 +123,8 @@ async def post_message(
         if text.strip():
             chat_sessions.add_attachment(session_id, file.filename or "uploaded-file", text)
             uploaded_names.append(file.filename or "uploaded-file")
+        else:
+            failed_files.append(file.filename or "uploaded-file")
 
     display_message = message.strip()
     if uploaded_names and not display_message:
@@ -132,6 +168,8 @@ async def post_message(
 
     response = _session_response(session)
     response["decision"] = result["decision"]
+    if failed_files:
+        response["failed_files"] = failed_files
     return response
 
 

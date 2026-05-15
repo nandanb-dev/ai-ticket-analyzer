@@ -266,6 +266,20 @@ class _InMemoryChatStore:
             session.attachments.append({"name": name, "content": content[:_MAX_ATTACHMENT_CHARS]})
             return deepcopy(session)
 
+    def update_attachment(self, session_id: str, index: int, content: str) -> ChatSession:
+        with self._lock:
+            session = self._sessions[session_id]
+            if 0 <= index < len(session.attachments):
+                session.attachments[index]["content"] = content[:_MAX_ATTACHMENT_CHARS]
+            return deepcopy(session)
+
+    def remove_attachment(self, session_id: str, index: int) -> ChatSession:
+        with self._lock:
+            session = self._sessions[session_id]
+            if 0 <= index < len(session.attachments):
+                session.attachments.pop(index)
+            return deepcopy(session)
+
     def update_project_key(self, session_id: str, project_key: str) -> ChatSession:
         with self._lock:
             session = self._sessions[session_id]

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "react-toastify";
 import API_BASE_URL from "../config";
 
 function AnalysisCard({ ticket, sessionId, onApplied }) {
@@ -21,9 +22,11 @@ function AnalysisCard({ ticket, sessionId, onApplied }) {
       if (!res.ok) throw new Error(data.detail || "Apply failed.");
       setCardState("applied");
       onApplied(ticket.key, data);
+      toast.success(`${ticket.key} applied to JIRA`);
     } catch (e) {
       setError(e.message);
       setCardState("approved");
+      toast.error(`Failed to apply ${ticket.key}: ${e.message}`);
     }
   }
 
