@@ -1,6 +1,33 @@
+import { useEffect, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import DraftTicketCard from "./DraftTicketCard";
+import API_BASE_URL from "../config";
 
 function DraftPanel({ tickets, onUpdate, onDelete, onCreate, isCreating, canCreate, projectKey, onProjectKeyChange }) {
+  const [projects, setProjects] = useState([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [projectsError, setProjectsError] = useState("");
+
+  useEffect(() => {
+    async function fetchProjects() {
+      setLoadingProjects(true);
+      setProjectsError("");
+      try {
+        const response = await fetch(`${API_BASE_URL}/projects`);
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || "Failed to fetch projects");
+        }
+        setProjects(data.projects || []);
+      } catch (error) {
+        console.error("Failed to fetch JIRA projects:", error);
+        setProjectsError(error.message);
+      } finally {
+        setLoadingProjects(false);
+      }
+    }
+    fetchProjects();
+  }, []);
   const handleUpdate = (index, type, updatedTicket) => {
     const key = type.toLowerCase() + 's';
     const list = [...(tickets[key] || [])];
@@ -34,15 +61,36 @@ function DraftPanel({ tickets, onUpdate, onDelete, onCreate, isCreating, canCrea
       </div>
 
       <div className="project-key-row">
-        <label>JIRA Project Key</label>
+        <label>JIRA Project</label>
         <div className="project-key-input-group">
-          <input
-            type="text"
-            value={projectKey || ''}
-            onChange={(e) => onProjectKeyChange(e.target.value.toUpperCase())}
-            placeholder="e.g., KAN"
-            className="project-key-input"
-          />
+          {loadingProjects ? (
+            <div className="project-key-input loading">Loading projects...</div>
+          ) : projectsError ? (
+            <input
+              type="text"
+              value={projectKey || ''}
+              onChange={(e) => onProjectKeyChange(e.target.value.toUpperCase())}
+              placeholder="e.g., KAN"
+              className="project-key-input"
+              title={`Failed to load projects: ${projectsError}`}
+            />
+          ) : (
+            <div className="project-select-wrapper">
+              <select
+                value={projectKey || ''}
+                onChange={(e) => onProjectKeyChange(e.target.value)}
+                className="project-key-select"
+              >
+                <option value="">Select a project...</option>
+                {projects.map((project) => (
+                  <option key={project.key} value={project.key}>
+                    {project.key} - {project.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={16} className="select-icon" />
+            </div>
+          )}
           {!projectKey && <span className="project-key-hint">Required to create tickets</span>}
         </div>
       </div>

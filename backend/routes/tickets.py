@@ -7,8 +7,28 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from agents.ticket_agent import run_ticket_agent
 from services.document import extract_text
 from services.confluence import get_page_content_as_text
+from services.jira import get_all_projects
 
 router = APIRouter()
+
+
+@router.get("/projects", summary="Get all JIRA projects")
+async def get_projects_endpoint():
+    """
+    Fetch all JIRA projects the authenticated user has access to.
+    
+    Returns a list of projects with key, name, and id.
+    """
+    try:
+        projects = await anyio.to_thread.run_sync(get_all_projects)
+        return {"projects": projects}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch JIRA projects: {str(e)}"
+        )
 
 
 def _extract_confluence_page_id(url_or_id: str) -> str:
