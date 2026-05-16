@@ -51,7 +51,14 @@ export default function HomePage() {
   const [editedContent, setEditedContent] = useState("");
   const [appliedTickets, setAppliedTickets] = useState(new Set());
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: "", message: "", onConfirm: null });
+  const [ragFiles, setRagFiles] = useState([]);
+  const [isUploadingToRag, setIsUploadingToRag] = useState(false);
+  const [ragIngestionStatus, setRagIngestionStatus] = useState({});
+  const [ingestionHistory, setIngestionHistory] = useState([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState("analysis");
   const fileInputRef = useRef(null);
+  const ragFileInputRef = useRef(null);
   const textareaRef = useRef(null);
   const abortRef = useRef(null);
 
@@ -79,6 +86,25 @@ export default function HomePage() {
 
     bootstrap();
   }, [session]);
+
+  useEffect(() => {
+    async function loadRagDocuments() {
+      setIsLoadingHistory(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/rag/documents?page=1&page_size=50`);
+        if (response.ok) {
+          const data = await response.json();
+          setIngestionHistory(data.documents || []);
+        }
+      } catch (error) {
+        console.error("Failed to load RAG documents:", error);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    }
+
+    loadRagDocuments();
+  }, []);
 
   const pendingTickets = useMemo(() => session?.pending_tickets || {}, [session]);
 
@@ -135,6 +161,7 @@ export default function HomePage() {
         ...data,
         rag_citations: ragCitations,
       });
+      setInspectorTab("analysis");
 
       setSession((prev) =>
         prev
@@ -290,6 +317,95 @@ export default function HomePage() {
         }
       }
     });
+  }
+
+  async function handleDeleteRagDocument(docId, docTitle) {
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete RAG Document",
+      message: `Are you sure you want to delete "${docTitle}" from the knowledge base? This action cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null });
+        
+        try {
+          const response = await fetch(`${API_BASE_URL}/rag/documents/${docId}`, {
+            method: "DELETE",
+          });
+          
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.detail || "Failed to delete document");
+          }
+          
+          // Remove from ingestion history
+          setIngestionHistory((prev) => prev.filter((doc) => doc.id !== docId));
+          toast.success(`Deleted "${docTitle}" from knowledge base`);
+        } catch (error) {
+          toast.error(`Failed to delete document: ${error.message}`);
+        }
+      }
+    });
+  }
+
+  async function handleUploadRagDocuments(event) {
+    const selectedFiles = Array.from(event.target.files || []);
+    if (!selectedFiles.length) return;
+
+    setIsUploadingToRag(true);
+    setRagFiles((prev) => [...prev, ...selectedFiles]);
+
+    try {
+      // Upload files one at a time
+      let totalChunks = 0;
+      for (const file of selectedFiles) {
+        const formData = new FormData();
+        formData.append("file", file); // Backend expects "file", not "documents"
+
+        const response = await fetch(`${API_BASE_URL}/rag/ingest/document`, {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || "Failed to ingest documents to RAG");
+        }
+
+        totalChunks += data.chunks_created || 0;
+
+        // Update ingestion status for this file
+        setRagIngestionStatus((prev) => ({
+          ...prev,
+          [file.name]: { status: "completed", chunks: data.chunks_created || 0 },
+        }));
+      }
+
+      toast.success(
+        `Ingested ${selectedFiles.length} document(s) to knowledge base (${totalChunks} chunks created)`
+      );
+
+      // Reload ingestion history to show newly added documents
+      const historyResponse = await fetch(`${API_BASE_URL}/rag/documents?page=1&page_size=50`);
+      if (historyResponse.ok) {
+        const historyData = await historyResponse.json();
+        setIngestionHistory(historyData.documents || []);
+      }
+
+      // Clear uploading files and status
+      setRagFiles([]);
+      setRagIngestionStatus({});
+    } catch (error) {
+      selectedFiles.forEach((file) => {
+        setRagIngestionStatus((prev) => ({
+          ...prev,
+          [file.name]: { status: "failed", error: error.message },
+        }));
+      });
+      toast.error(`Failed to ingest documents: ${error.message}`);
+    } finally {
+      setIsUploadingToRag(false);
+      if (ragFileInputRef.current) ragFileInputRef.current.value = "";
+    }
   }
 
   async function handleSubmit(event) {
@@ -542,62 +658,162 @@ export default function HomePage() {
 
         <aside className="inspector-column">
           {analyzeSession ? (
-            <section className="glass-panel side-panel analysis-panel">
+            <section className="glass-panel side-panel">
               <div className="panel-header slim">
-                <div>
-                  <p className="panel-kicker"><Search size={14} style={{display: 'inline', verticalAlign: 'middle', marginRight: '4px'}} /> Analysis</p>
-                  <h3>{analyzeSession.source || 'Ticket Review'}</h3>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    marginRight: 12,
+                    marginLeft: 12,
+                    padding: "6px",
+                    borderRadius: 12,
+                    background: "rgba(255, 255, 255, 0.06)",
+                    border: "1px solid rgba(255, 255, 255, 0.12)",
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => setInspectorTab("analysis")}
+                    style={{
+                      padding: "15px 45px",
+                      background: inspectorTab === "analysis" ? "rgba(58, 134, 255, 0.16)" : "transparent",
+                      border: inspectorTab === "analysis" ? "1px solid rgba(58, 134, 255, 0.35)" : "1px solid transparent",
+                      borderRadius: 8,
+                      color: inspectorTab === "analysis" ? "var(--text-primary)" : "var(--text-secondary)",
+                      fontWeight: inspectorTab === "analysis" ? 700 : 500,
+                      textDecoration: inspectorTab === "analysis" ? "underline" : "none",
+                      textUnderlineOffset: "5px",
+                      boxShadow: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Analysis
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => setInspectorTab("draft")}
+                    style={{
+                      padding: "15px 45px",
+                      background: inspectorTab === "draft" ? "rgba(58, 134, 255, 0.16)" : "transparent",
+                      border: inspectorTab === "draft" ? "1px solid rgba(58, 134, 255, 0.35)" : "1px solid transparent",
+                      borderRadius: 8,
+                      color: inspectorTab === "draft" ? "var(--text-primary)" : "var(--text-secondary)",
+                      fontWeight: inspectorTab === "draft" ? 700 : 500,
+                      textDecoration: inspectorTab === "draft" ? "underline" : "none",
+                      textUnderlineOffset: "5px",
+                      boxShadow: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Draft
+                  </button>
                 </div>
-                <button className="exit-btn" onClick={() => setAnalyzeSession(null)} title="Exit analysis mode"><X size={16} /></button>
+                <button
+                  className="exit-btn"
+                  onClick={() => {
+                    setAnalyzeSession(null);
+                    setInspectorTab("analysis");
+                  }}
+                  title="Exit analysis mode"
+                >
+                  <X size={16} />
+                </button>
               </div>
 
-              <div className="analysis-metrics">
-                <div className="metric">
-                  <span className="metric-value">{analyzeSession.analysis?.overall_score ?? '—'}</span>
-                  <span className="metric-label">Overall Score</span>
-                </div>
-                <div className="metric">
-                  <span className="metric-value">{analyzeSession.ticket_count || 0}</span>
-                  <span className="metric-label">Tickets</span>
-                </div>
-                <div className="metric critical">
-                  <span className="metric-value">
-                    {(analyzeSession.analysis?.tickets || []).flatMap(t => t.issues_found || []).filter(i => i.severity === 'critical').length}
-                  </span>
-                  <span className="metric-label">Critical</span>
-                </div>
-                <div className="metric major">
-                  <span className="metric-value">
-                    {(analyzeSession.analysis?.tickets || []).flatMap(t => t.issues_found || []).filter(i => i.severity === 'major').length}
-                  </span>
-                  <span className="metric-label">Major</span>
-                </div>
-              </div>
+              {inspectorTab === "analysis" ? (
+                <section className="analysis-panel" style={{ marginTop: 8 }}>
+                  <div className="panel-header slim" style={{ padding: 0, marginBottom: 10 }}>
+                    <div>
+                      <p className="panel-kicker"><Search size={14} style={{display: 'inline', verticalAlign: 'middle', marginRight: '4px'}} /> Analysis</p>
+                      <h3>{analyzeSession.source || 'Ticket Review'}</h3>
+                    </div>
+                  </div>
 
-              {analyzeSession.analysis?.analysis_summary && (
-                <p className="analysis-summary-text">{analyzeSession.analysis.analysis_summary}</p>
-              )}
+                  <div className="analysis-metrics">
+                    <div className="metric">
+                      <span className="metric-value">{analyzeSession.analysis?.overall_score ?? '—'}</span>
+                      <span className="metric-label">Overall Score</span>
+                    </div>
+                    <div className="metric">
+                      <span className="metric-value">{analyzeSession.ticket_count || 0}</span>
+                      <span className="metric-label">Tickets</span>
+                    </div>
+                    <div className="metric critical">
+                      <span className="metric-value">
+                        {(analyzeSession.analysis?.tickets || []).flatMap(t => t.issues_found || []).filter(i => i.severity === 'critical').length}
+                      </span>
+                      <span className="metric-label">Critical</span>
+                    </div>
+                    <div className="metric major">
+                      <span className="metric-value">
+                        {(analyzeSession.analysis?.tickets || []).flatMap(t => t.issues_found || []).filter(i => i.severity === 'major').length}
+                      </span>
+                      <span className="metric-label">Major</span>
+                    </div>
+                  </div>
 
-              {analyzeSession?.rag_citations?.length > 0 && (
-                <p className="muted-copy" style={{ marginBottom: 10 }}>
-                  RAG evidence loaded: <strong>{analyzeSession.rag_citations.length}</strong> source(s)
-                </p>
-              )}
+                  {analyzeSession.analysis?.analysis_summary && (
+                    <p className="analysis-summary-text">{analyzeSession.analysis.analysis_summary}</p>
+                  )}
 
-              <div className="analysis-list">
-                {(analyzeSession.analysis?.tickets || []).map((ticket, index) => (
-                  <AnalysisCard
-                    key={`${ticket.key}-${analyzeSession.analysis?.overall_score}-${index}`}
-                    ticket={ticket}
-                    sessionId={analyzeSession.session_id}
-                    onApplied={handleApplied}
-                    globalSources={analyzeSession.rag_citations || []}
+                  {analyzeSession?.rag_citations?.length > 0 && (
+                    <p className="muted-copy" style={{ marginBottom: 10 }}>
+                      RAG evidence loaded: <strong>{analyzeSession.rag_citations.length}</strong> source(s)
+                    </p>
+                  )}
+
+                  <div className="analysis-list">
+                    {(analyzeSession.analysis?.tickets || []).map((ticket, index) => (
+                      <AnalysisCard
+                        key={`${ticket.key}-${analyzeSession.analysis?.overall_score}-${index}`}
+                        ticket={ticket}
+                        sessionId={analyzeSession.session_id}
+                        onApplied={handleApplied}
+                        globalSources={analyzeSession.rag_citations || []}
+                      />
+                    ))}
+                    {!(analyzeSession.analysis?.tickets?.length) && (
+                      <p className="muted-copy">No tickets in analysis.</p>
+                    )}
+                  </div>
+                </section>
+              ) : (
+                <section className="draft-section" style={{ marginTop: 8 }}>
+                  <DraftPanel
+                    tickets={pendingTickets}
+                    onUpdate={(updatedTickets) => {
+                      setSession(prev => prev ? { ...prev, pending_tickets: updatedTickets } : prev);
+                    }}
+                    onDelete={() => {}}
+                    onCreate={handleConfirm}
+                    isCreating={isConfirming}
+                    canCreate={session?.awaiting_confirmation && session?.project_key}
+                    projectKey={session?.project_key || ''}
+                    onProjectKeyChange={async (key) => {
+                      if (!session?.session_id || !key) return;
+                      try {
+                        const res = await fetch(`${API_BASE_URL}/chat/sessions/${session.session_id}/project-key`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ project_key: key })
+                        });
+                        if (res.ok) {
+                          const data = await res.json();
+                          setSession(data);
+                        }
+                      } catch (e) {
+                        console.error('Failed to update project key:', e);
+                        toast.error('Failed to update project key');
+                      }
+                    }}
                   />
-                ))}
-                {!(analyzeSession.analysis?.tickets?.length) && (
-                  <p className="muted-copy">No tickets in analysis.</p>
-                )}
-              </div>
+                </section>
+              )}
             </section>
           ) : (
             <section className="glass-panel side-panel draft-section">
@@ -640,70 +856,204 @@ export default function HomePage() {
               </div>
             </div>
 
-            {session?.attachments?.length ? (
-              <div className="summary-list">
-                {session.attachments.map((attachment, index) => (
-                  <div className="summary-card attachment-card" key={`${attachment.name}-${index}`}>
-                    <div className="attachment-header">
-                      <strong>{attachment.name}</strong>
+            {/* Chat attachments section */}
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ fontSize: "0.85rem", fontWeight: "600", marginBottom: "12px", color: "var(--text-secondary)" }}>
+                Chat Context
+              </p>
+              {session?.attachments?.length ? (
+                <div 
+                  className="summary-list"
+                  style={{
+                    maxHeight: "180px",
+                    overflowY: "auto",
+                    paddingRight: "4px",
+                  }}
+                >
+                  {session.attachments.map((attachment, index) => (
+                    <div className="summary-card attachment-card" key={`${attachment.name}-${index}`}>
+                      <div className="attachment-header">
+                        <strong>{attachment.name}</strong>
+                        {editingAttachment === index ? (
+                          <div className="attachment-actions">
+                            <button
+                              className="attachment-action-btn save"
+                              onClick={() => handleSaveAttachment(index)}
+                              title="Save changes"
+                            >
+                              Save
+                            </button>
+                            <button
+                              className="attachment-action-btn cancel"
+                              onClick={() => {
+                                setEditingAttachment(null);
+                                setEditedContent("");
+                              }}
+                              title="Cancel"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : editingAttachment === null ? (
+                          <div className="attachment-actions">
+                            <button
+                              className="attachment-action-btn delete"
+                              onClick={() => handleDeleteAttachment(index, attachment.name)}
+                              title="Remove attachment"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                       {editingAttachment === index ? (
-                        <div className="attachment-actions">
-                          <button
-                            className="attachment-action-btn save"
-                            onClick={() => handleSaveAttachment(index)}
-                            title="Save changes"
-                          >
-                            Save
-                          </button>
-                          <button
-                            className="attachment-action-btn cancel"
-                            onClick={() => {
-                              setEditingAttachment(null);
-                              setEditedContent("");
-                            }}
-                            title="Cancel"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : editingAttachment === null ? (
-                        <div className="attachment-actions">
-                          {/* <button
-                            className="attachment-action-btn edit"
-                            onClick={() => {
-                              setEditingAttachment(index);
-                              setEditedContent(attachment.content);
-                            }}
-                            title="Edit content"
-                          >
-                            Edit
-                          </button> */}
-                          <button
-                            className="attachment-action-btn delete"
-                            onClick={() => handleDeleteAttachment(index, attachment.name)}
-                            title="Remove attachment"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      ) : null}
+                        <textarea
+                          className="attachment-editor"
+                          value={editedContent}
+                          onChange={(e) => setEditedContent(e.target.value)}
+                          rows={10}
+                        />
+                      ) : (
+                        <p>{attachment.preview}</p>
+                      )}
                     </div>
-                    {editingAttachment === index ? (
-                      <textarea
-                        className="attachment-editor"
-                        value={editedContent}
-                        onChange={(e) => setEditedContent(e.target.value)}
-                        rows={10}
-                      />
-                    ) : (
-                      <p>{attachment.preview}</p>
-                    )}
-                  </div>
-                ))}
+                  ))}
+                </div>
+              ) : (
+                <p className="muted-copy">No chat attachments yet.</p>
+              )}
+            </div>
+
+            {/* RAG documents section */}
+            <div>
+              <p style={{ fontSize: "0.85rem", fontWeight: "600", marginBottom: "12px", color: "var(--text-secondary)" }}>
+                Knowledge Base
+              </p>
+              <div style={{ marginBottom: "12px" }}>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    fontSize: "0.9rem",
+                    marginBottom: "8px",
+                    border: "1px dashed var(--border-subtle)",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    backgroundColor: "rgba(58, 134, 255, 0.05)",
+                    color: "var(--text-primary)",
+                    transition: "all 0.2s",
+                  }}
+                  onClick={() => ragFileInputRef.current?.click()}
+                  disabled={isUploadingToRag}
+                >
+                  {isUploadingToRag ? "Uploading..." : "➕ Add documents to RAG"}
+                </button>
+                <input
+                  ref={ragFileInputRef}
+                  type="file"
+                  multiple
+                  style={{ display: "none" }}
+                  onChange={handleUploadRagDocuments}
+                />
               </div>
-            ) : (
-              <p className="muted-copy">No uploaded files yet.</p>
-            )}
+
+              {/* Display already-ingested documents */}
+              {ingestionHistory.length > 0 && (
+                <div style={{ marginBottom: "16px" }}>
+                  <p style={{ fontSize: "0.75rem", fontWeight: "500", marginBottom: "8px", color: "var(--text-secondary)", textTransform: "uppercase" }}>
+                    Ingested ({ingestionHistory.length})
+                  </p>
+                  <div 
+                    className="summary-list"
+                    style={{
+                      maxHeight: "200px",
+                      overflowY: "auto",
+                      paddingRight: "4px",
+                    }}
+                  >
+                    {ingestionHistory.map((doc) => (
+                      <div className="summary-card" key={doc.id}>
+                        <div className="attachment-header">
+                          <div style={{ flex: 1 }}>
+                            <strong>{doc.title || doc.source_id}</strong>
+                            <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "4px" }}>
+                              <span style={{ textTransform: "capitalize" }}>{doc.source_type}</span>
+                              {doc.chunk_count && ` • ${doc.chunk_count} chunks`}
+                              {doc.created_at && ` • ${new Date(doc.created_at).toLocaleDateString()}`}
+                            </p>
+                          </div>
+                          <div className="attachment-actions">
+                            <button
+                              className="attachment-action-btn delete"
+                              onClick={() => handleDeleteRagDocument(doc.id, doc.title || doc.source_id)}
+                              title="Delete from knowledge base"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Display currently uploading files */}
+              {ragFiles.length > 0 && (
+                <div>
+                  <p style={{ fontSize: "0.75rem", fontWeight: "500", marginBottom: "8px", color: "var(--text-secondary)", textTransform: "uppercase" }}>
+                    Uploading ({ragFiles.length})
+                  </p>
+                  <div 
+                    className="summary-list"
+                    style={{
+                      maxHeight: "150px",
+                      overflowY: "auto",
+                      paddingRight: "4px",
+                    }}
+                  >
+                    {ragFiles.map((file, index) => {
+                      const status = ragIngestionStatus[file.name];
+                      const isCompleted = status?.status === "completed";
+                      const isFailed = status?.status === "failed";
+
+                      return (
+                        <div
+                          className="summary-card"
+                          key={`${file.name}-${index}`}
+                          style={{
+                            opacity: isFailed ? 0.6 : 1,
+                            borderColor: isFailed ? "var(--error-color, #ff5757)" : "var(--border-subtle)",
+                          }}
+                        >
+                          <div className="attachment-header">
+                            <div style={{ flex: 1 }}>
+                              <strong>{file.name}</strong>
+                              <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "4px" }}>
+                                {!status ? (
+                                  "⏳ Queued..."
+                                ) : isCompleted ? (
+                                  <>✓ {status.chunks} chunks created</>
+                                ) : isFailed ? (
+                                  <>✗ {status.error}</>
+                                ) : null}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {ingestionHistory.length === 0 && ragFiles.length === 0 && (
+                <p className="muted-copy">No documents added to knowledge base yet.</p>
+              )}
+            </div>
           </section>
 
           <section className="glass-panel side-panel">
