@@ -826,6 +826,8 @@ textarea {
 .metric-pill.major { background: rgba(230, 126, 34, 0.12); color: #e67e22; }
 .metric-pill.minor { background: rgba(52, 152, 219, 0.12); color: #3498db; }
 .metric-pill.good { background: rgba(39, 174, 96, 0.12); color: #27ae60; }
+.metric-pill.rag-grounded { background: rgba(39, 174, 96, 0.12); color: #1f8a4c; }
+.metric-pill.rag-empty { background: rgba(127, 140, 141, 0.15); color: #5f6d6d; }
 
 .metric-pill svg {
   display: inline-block;

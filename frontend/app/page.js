@@ -10,6 +10,32 @@ import MessageBubble from "./components/MessageBubble";
 import DraftPanel from "./components/DraftPanel";
 import AnalysisCard from "./components/AnalysisCard";
 import ConfirmModal from "./components/ConfirmModal";
+import { normalizeRagCitations } from "./utils";
+
+function buildPendingTicketsFromAnalysis(analysis) {
+  const grouped = { epics: [], stories: [], tasks: [] };
+  const tickets = analysis?.tickets || [];
+
+  for (const t of tickets) {
+    const su = t?.suggested_updates || {};
+    const issueType = String(su.issue_type || t.issue_type || "Task").toLowerCase();
+
+    const draft = {
+      summary: su.summary || t.current_summary || "",
+      description: su.description || "",
+      priority: su.priority || "Medium",
+      story_points: su.story_points ?? "",
+      labels: Array.isArray(su.labels) ? su.labels : [],
+      acceptance_criteria: Array.isArray(su.acceptance_criteria) ? su.acceptance_criteria : [],
+    };
+
+    if (issueType === "epic") grouped.epics.push(draft);
+    else if (issueType === "story") grouped.stories.push(draft);
+    else grouped.tasks.push(draft);
+  }
+
+  return grouped;
+}
 
 export default function HomePage() {
   const [session, setSession] = useState(null);
@@ -60,6 +86,33 @@ export default function HomePage() {
     setChatMessages((prev) => [...prev, { role, content, ...(id && { id }) }]);
   }
 
+  function logRagDebug(stage, payload) {
+    const citations = normalizeRagCitations(payload);
+    const tickets = payload?.analysis?.tickets || [];
+    const perTicketSourceCounts = tickets.map((ticket) => {
+      const count = [
+        ticket?.rag_citations,
+        ticket?.citations,
+        ticket?.sources,
+        ticket?.retrieval_context?.sources,
+      ].find(Array.isArray)?.length || 0;
+      return { key: ticket?.key || "unknown", sourceCount: count };
+    });
+
+    console.groupCollapsed(`[RAG][UI] ${stage}`);
+    console.log("API rag_used:", payload?.rag_used);
+    console.log("API rag_citations count:", Array.isArray(payload?.rag_citations) ? payload.rag_citations.length : 0);
+    console.log("Normalized citations count:", citations.length);
+    console.log("Ticket-level source counts:", perTicketSourceCounts);
+    console.log("Normalized citations preview:", citations.slice(0, 3));
+    if (citations.length === 0) {
+      console.warn("[RAG][UI] No citations found in response payload. Analysis may be ungrounded or retrieval returned no matches.");
+    }
+    console.groupEnd();
+
+    return citations;
+  }
+
   async function handleAnalyze(sentMessage, intent) {
     const source = intent.ticket_key || intent.epic_key || intent.project_key;
     const scopeLabel = intent.ticket_key ? `ticket ${source}` : intent.epic_key ? `epic ${source}` : `project ${source}`;
@@ -77,9 +130,24 @@ export default function HomePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Analysis failed.");
 
+      const ragCitations = logRagDebug("analyze-response", data);
+      setAnalyzeSession({
+        ...data,
+        rag_citations: ragCitations,
+      });
+
+      setSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              pending_tickets: buildPendingTicketsFromAnalysis(data.analysis),
+              awaiting_confirmation: true,
+            }
+          : prev
+      );
+
       // Remove the temporary analyzing message
       setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
-      setAnalyzeSession(data);
       setAppliedTickets(new Set()); // Reset applied tickets for new analysis
       const a = data.analysis || {};
       const tickets = a.tickets || [];
@@ -87,7 +155,7 @@ export default function HomePage() {
       const major = tickets.flatMap((t) => t.issues_found || []).filter((i) => i.severity === "major").length;
       pushChatMessage(
         "assistant",
-        `Analysis complete. Overall score: ${a.overall_score ?? "—"}/10 across ${data.ticket_count} ticket(s).\n- ${critical} critical issue(s)\n- ${major} major issue(s)\n\n${a.analysis_summary || ""}\n\nReview the details in the panel. You can approve and apply changes per ticket, or type feedback below to refine the analysis.`
+        `Analysis complete. ${ragCitations.length} source(s) retrieved from RAG.`
       );
       toast.success(`Analysis complete — score ${a.overall_score ?? "—"}/10 across ${data.ticket_count} ticket(s)`);
     } catch (e) {
@@ -116,9 +184,26 @@ export default function HomePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Feedback failed.");
 
+      const nextCitations = logRagDebug("feedback-response", data);
+      setAnalyzeSession((prev) => ({
+        ...(prev || {}),
+        analysis: data.analysis,
+        // keep previous citations if feedback response does not return fresh ones
+        rag_citations: nextCitations.length ? nextCitations : prev?.rag_citations || [],
+      }));
+
+      setSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              pending_tickets: buildPendingTicketsFromAnalysis(data.analysis),
+              awaiting_confirmation: true,
+            }
+          : prev
+      );
+
       // Remove the temporary refining message
       setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
-      setAnalyzeSession((prev) => ({ ...prev, analysis: data.analysis }));
       pushChatMessage("assistant", `Analysis revised (revision ${data.revision}). Review the updated panel.`);
       toast.success(`Analysis revised (revision ${data.revision})`);
     } catch (e) {
@@ -493,6 +578,12 @@ export default function HomePage() {
                 <p className="analysis-summary-text">{analyzeSession.analysis.analysis_summary}</p>
               )}
 
+              {analyzeSession?.rag_citations?.length > 0 && (
+                <p className="muted-copy" style={{ marginBottom: 10 }}>
+                  RAG evidence loaded: <strong>{analyzeSession.rag_citations.length}</strong> source(s)
+                </p>
+              )}
+
               <div className="analysis-list">
                 {(analyzeSession.analysis?.tickets || []).map((ticket, index) => (
                   <AnalysisCard
@@ -500,6 +591,7 @@ export default function HomePage() {
                     ticket={ticket}
                     sessionId={analyzeSession.session_id}
                     onApplied={handleApplied}
+                    globalSources={analyzeSession.rag_citations || []}
                   />
                 ))}
                 {!(analyzeSession.analysis?.tickets?.length) && (
