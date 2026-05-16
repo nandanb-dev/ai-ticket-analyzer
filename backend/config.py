@@ -21,3 +21,29 @@ CORS_ALLOWED_ORIGINS: list[str] = [
     for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
     if origin.strip()
 ]
+
+# ── PostgreSQL ────────────────────────────────────────────────────────────────
+# Example: postgresql://user:password@localhost:5432/ai_ticket_analyzer
+DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+
+# ── RAG / Embeddings ──────────────────────────────────────────────────────────
+EMBEDDING_MODEL: str      = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+EMBEDDING_DIMENSIONS: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
+
+# Chunking
+CHUNK_MAX_TOKENS: int     = int(os.getenv("CHUNK_MAX_TOKENS", "512"))
+CHUNK_MIN_TOKENS: int     = int(os.getenv("CHUNK_MIN_TOKENS", "50"))
+CHUNK_OVERLAP_TOKENS: int = int(os.getenv("CHUNK_OVERLAP_TOKENS", "64"))
+
+# Retrieval
+RETRIEVAL_TOP_K: int  = int(os.getenv("RETRIEVAL_TOP_K", "50"))
+RERANK_TOP_N: int     = int(os.getenv("RERANK_TOP_N", "8"))
+DENSE_WEIGHT: float   = float(os.getenv("DENSE_WEIGHT", "0.6"))
+BM25_WEIGHT: float    = float(os.getenv("BM25_WEIGHT", "0.4"))
+RRF_K: int            = 60  # reciprocal rank fusion constant
+
+# Context window budget reserved for RAG snippets (in tokens)
+CONTEXT_TOKEN_BUDGET: int = int(os.getenv("CONTEXT_TOKEN_BUDGET", "3000"))
+
+# Cross-encoder model for reranking (ONNX-based via flashrank)
+CROSS_ENCODER_MODEL: str = os.getenv("CROSS_ENCODER_MODEL", "ms-marco-MiniLM-L-12-v2")
