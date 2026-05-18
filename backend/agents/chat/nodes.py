@@ -2,7 +2,7 @@ from typing import Any
 
 from services.jira import push_tickets
 
-from agents.chat.chains import get_decision_chain, get_response_chain, get_ticket_chain
+from agents.chat.chains import get_decision_chain, get_response_chain, get_ticket_chain, get_clarification_chain
 from agents.chat.models import ChatState
 from agents.chat.utils import (
     build_generation_context,
@@ -88,6 +88,69 @@ def confirm_tickets_node(state: ChatState) -> dict[str, Any]:
         }
     except Exception as exc:
         return {"error": f"JIRA creation failed: {exc}"}
+
+
+def clarify_requirements_node(state: ChatState) -> dict[str, Any]:
+    """Analyze requirements and generate targeted clarification questions"""
+    try:
+        analysis = get_clarification_chain().invoke({
+            "history_text": format_messages(state["conversation_history"]),
+            "attachment_text": format_attachments(state["attachments"]),
+            "context_text": state["context_text"] or "",
+            "latest_user_message": state["latest_user_message"],
+        })
+
+        # Build conversational response with questions
+        reply_parts = []
+
+        if analysis.readiness_score >= 8:
+            reply_parts.append(
+                f"**Development Readiness: {analysis.readiness_score}/10**\n\n"
+                "The requirements look solid! I can proceed with ticket generation."
+            )
+            if analysis.assumptions_if_proceed:
+                reply_parts.append("\n**Minor assumptions I'll make:**")
+                for assumption in analysis.assumptions_if_proceed:
+                    reply_parts.append(f"- {assumption}")
+            reply_parts.append(
+                "\n\n_Reply with 'generate tickets' to proceed, or provide additional details._"
+            )
+        else:
+            reply_parts.append(
+                f"**Development Readiness: {analysis.readiness_score}/10**\n\n"
+                f"{analysis.summary}\n\n"
+                "I have a few questions to ensure we build the right thing:"
+            )
+
+            # Group questions by priority
+            blocking_categories = {g.category for g in analysis.gaps if g.severity == "blocking"}
+            important_categories = {g.category for g in analysis.gaps if g.severity == "important"}
+
+            blocking = [q for q in analysis.questions if q.category in blocking_categories]
+            important = [q for q in analysis.questions if q.category in important_categories]
+            other = [q for q in analysis.questions if q.category not in blocking_categories and q.category not in important_categories]
+
+            question_num = 1
+            for q in (blocking + important + other)[:5]:  # Limit to 5 questions
+                reply_parts.append(f"\n**{question_num}. {q.question}**")
+                if q.suggestions:
+                    reply_parts.append("   _Suggestions:_")
+                    for suggestion in q.suggestions:
+                        reply_parts.append(f"   - {suggestion}")
+                question_num += 1
+
+            if analysis.can_proceed_with_assumptions:
+                reply_parts.append(
+                    "\n---\n\n_Alternatively, reply 'proceed with assumptions' and I'll generate "
+                    "tickets with reasonable defaults that you can refine afterward._"
+                )
+
+        return {
+            "reply": "\n".join(reply_parts),
+            "clarification_analysis": analysis.model_dump(),
+        }
+    except Exception as exc:
+        return {"error": f"Clarification analysis failed: {exc}"}
 
 
 def route_after_decision(state: ChatState) -> str:
