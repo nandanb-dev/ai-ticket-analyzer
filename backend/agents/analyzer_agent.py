@@ -185,9 +185,95 @@ def _analyze_node(state: AnalyzerState) -> dict:
             "rag_context": rag_context,
             "rag_citations": json.dumps(state.get("rag_citations") or [], ensure_ascii=False),
         })
+        analysis = _enforce_incident_escalation(analysis, state.get("rag_citations") or [])
         return {"analysis": analysis}
     except Exception as exc:
         return {"error": f"Analysis failed: {exc}"}
+
+
+def _enforce_incident_escalation(analysis: dict, rag_citations: List[dict]) -> dict:
+    """
+    Enforce severity escalation rules deterministically when incident evidence exists.
+
+    Why: LLMs can occasionally under-apply prompt constraints. This guardrail ensures
+    incident/rca grounded major issues are promoted to critical and quality_score caps
+    remain aligned with critical issue counts.
+    """
+    if not isinstance(analysis, dict):
+        return analysis
+
+    incident_source_ids: set[str] = set()
+    for citation in rag_citations or []:
+        if not isinstance(citation, dict):
+            continue
+        source_id = str(citation.get("source_id") or "").strip()
+        doc_type = str(citation.get("doc_type") or "").strip().lower()
+        severity_level = str(citation.get("severity_level") or "").strip().lower()
+        excerpt = str(citation.get("excerpt") or "").strip().lower()
+
+        is_incident_like = (
+            doc_type in {"incident", "rca"}
+            or "incident" in source_id.lower()
+            or "rca" in source_id.lower()
+            or severity_level == "p1_p2"
+            or " p1 " in f" {excerpt} "
+            or " p2 " in f" {excerpt} "
+        )
+
+        if is_incident_like and source_id:
+            incident_source_ids.add(source_id)
+
+    if not incident_source_ids:
+        return analysis
+
+    for ticket in analysis.get("tickets", []) or []:
+        issues = ticket.get("issues_found") or []
+        if not isinstance(issues, list):
+            continue
+
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+
+            severity = str(issue.get("severity") or "").strip().lower()
+            if severity != "major":
+                continue
+
+            grounded_in = str(issue.get("grounded_in") or "").strip()
+            description = str(issue.get("description") or "")
+            suggestion = str(issue.get("suggestion") or "")
+            text_blob = f"{grounded_in} {description} {suggestion}".lower()
+
+            matches_incident_source = any(
+                src.lower() in text_blob for src in incident_source_ids
+            )
+            mentions_incident_terms = ("incident" in text_blob) or ("rca" in text_blob)
+
+            if matches_incident_source or mentions_incident_terms:
+                issue["severity"] = "critical"
+                if grounded_in:
+                    issue["description"] = (
+                        f"{description} Escalated to critical based on incident/RCA evidence from {grounded_in}."
+                    ).strip()
+
+        # Enforce quality score caps derived from critical issue count
+        critical_count = sum(
+            1
+            for issue in issues
+            if isinstance(issue, dict) and str(issue.get("severity") or "").strip().lower() == "critical"
+        )
+        raw_quality = ticket.get("quality_score")
+        try:
+            quality_score = float(raw_quality)
+        except (TypeError, ValueError):
+            continue
+
+        if critical_count >= 2:
+            ticket["quality_score"] = min(quality_score, 3)
+        elif critical_count >= 1:
+            ticket["quality_score"] = min(quality_score, 5)
+
+    return analysis
 
 
 def _refine_node(state: AnalyzerState) -> dict:
@@ -266,6 +352,28 @@ def _apply_node(state: AnalyzerState) -> dict:
 def _build_analysis_result(state: AnalyzerState) -> dict:
     """Wrap the analysis into the final result payload."""
     analysis = state.get("analysis", {})
+
+    # Guardrail: overall_score cannot exceed the weakest ticket quality_score.
+    if isinstance(analysis, dict):
+        tickets = analysis.get("tickets") or []
+        quality_scores: List[float] = []
+        for ticket in tickets:
+            if not isinstance(ticket, dict):
+                continue
+            try:
+                quality_scores.append(float(ticket.get("quality_score")))
+            except (TypeError, ValueError):
+                continue
+
+        if quality_scores:
+            min_quality_score = min(quality_scores)
+            try:
+                current_overall = float(analysis.get("overall_score"))
+                analysis["overall_score"] = min(current_overall, min_quality_score)
+            except (TypeError, ValueError):
+                # If model output is missing/invalid, fall back to safe bound.
+                analysis["overall_score"] = min_quality_score
+
     return {
         "result": {
             "analysis": analysis,
