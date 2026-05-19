@@ -205,6 +205,8 @@ async def analyze_tickets(req: AnalyzeRequest):
         "epic_key": session.epic_key,
         "ticket_key": session.ticket_key,
         "analysis": result["analysis"],
+        "rag_citations": result.get("rag_citations", []),
+        "rag_used": bool(result.get("rag_citations")),
     }
 
 

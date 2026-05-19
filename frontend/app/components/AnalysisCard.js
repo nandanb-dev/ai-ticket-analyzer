@@ -2,12 +2,34 @@ import { useState } from "react";
 import { toast } from "react-toastify";
 import API_BASE_URL from "../config";
 
-function AnalysisCard({ ticket, sessionId, onApplied }) {
+function normalizeTicketSources(ticket, globalSources = []) {
+  const raw =
+    ticket?.rag_citations ||
+    ticket?.citations ||
+    ticket?.sources ||
+    ticket?.retrieval_context?.sources ||
+    globalSources ||
+    [];
+
+  if (!Array.isArray(raw)) return [];
+
+  return raw.map((s, i) => ({
+    id: s?.id || s?.chunk_id || s?.doc_id || `src-${i + 1}`,
+    title: s?.title || s?.document_title || s?.source || "Untitled source",
+    snippet: s?.snippet || s?.excerpt || s?.text || "",
+    url: s?.url || s?.uri || s?.link || "",
+    score: typeof s?.score === "number" ? s.score : null,
+  }));
+}
+
+function AnalysisCard({ ticket, sessionId, onApplied, globalSources = [] }) {
   const [cardState, setCardState] = useState("idle");
   const [expanded, setExpanded] = useState(false);
   const [showingUpdates, setShowingUpdates] = useState(false);
   const [error, setError] = useState("");
   const [showingRoleFindings, setShowingRoleFindings] = useState(false);
+  const [showingSources, setShowingSources] = useState(false);
+  const sources = normalizeTicketSources(ticket, globalSources);
 
   async function handleApply() {
     setCardState("applying");
@@ -42,6 +64,7 @@ function AnalysisCard({ ticket, sessionId, onApplied }) {
 
   const hasRoleFindings = Object.keys(ticket.role_findings || {}).length > 0;
   const hasUpdates = Object.keys(ticket.suggested_updates || {}).length > 0;
+  const hasSources = sources.length > 0;
 
   // Compact inline metrics
   const criticalCount = (ticket.issues_found || []).filter(i => i.severity === "critical").length;
@@ -76,6 +99,13 @@ function AnalysisCard({ ticket, sessionId, onApplied }) {
 
       {/* Inline Metrics Row */}
       <div className="analysis-metrics-row">
+        <span className={`metric-pill ${hasSources ? "rag-grounded" : "rag-empty"}`} title={hasSources ? `${sources.length} retrieval source(s) found` : "No retrieval evidence found for this ticket"}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            {hasSources ? <path d="M20 6L9 17l-5-5" /> : <path d="M12 9v4" />}
+            {!hasSources && <path d="M12 17h.01" />}
+          </svg>
+          {hasSources ? `RAG grounded (${sources.length})` : "No evidence"}
+        </span>
         {criticalCount > 0 && (
           <span className="metric-pill critical">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 22h20L12 2zm0 3l7.5 15h-15L12 5z"/></svg>
@@ -156,6 +186,39 @@ function AnalysisCard({ ticket, sessionId, onApplied }) {
                   <span className="role-text">{finding}</span>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {hasSources && (
+        <div className="role-findings-section">
+          <button className="expand-btn compact" onClick={() => setShowingSources(!showingSources)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              {showingSources ? <path d="m18 15-6-6-6 6"/> : <path d="m9 18 6-6-6-6"/>}
+            </svg>
+            RAG Sources ({sources.length})
+          </button>
+
+          {showingSources && (
+            <div className="role-findings-list">
+              {sources.slice(0, 8).map((src) => (
+                <div key={src.id} className="role-finding">
+                  <span className="role-name">
+                    {src.title}
+                    {src.score != null ? ` · score: ${src.score.toFixed?.(3) ?? src.score}` : ""}
+                  </span>
+                  {src.snippet ? <span className="role-text">{src.snippet}</span> : null}
+                  {src.url ? (
+                    <a href={src.url} target="_blank" rel="noreferrer" className="role-text">
+                      Open source
+                    </a>
+                  ) : null}
+                </div>
+              ))}
+              {sources.length > 8 && (
+                <span className="role-text">+{sources.length - 8} more source(s)</span>
+              )}
             </div>
           )}
         </div>

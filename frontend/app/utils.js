@@ -30,3 +30,23 @@ function renderContent(content) {
 }
 
 export { detectAnalyzeIntent, renderContent };
+
+export function normalizeRagCitations(payload) {
+  const raw =
+    payload?.rag_citations ||
+    payload?.analysis?.rag_citations ||
+    payload?.rag?.citations ||
+    payload?.citations ||
+    [];
+
+  if (!Array.isArray(raw)) return [];
+
+  return raw.map((item, idx) => ({
+    id: item?.id || item?.chunk_id || item?.doc_id || `src-${idx + 1}`,
+    title: item?.title || item?.document_title || item?.source || "Untitled source",
+    url: item?.url || item?.uri || item?.link || "",
+    snippet: item?.snippet || item?.excerpt || item?.text || "",
+    score: typeof item?.score === "number" ? item.score : null,
+    sourceType: item?.source_type || item?.type || "document",
+  }));
+}

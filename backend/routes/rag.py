@@ -285,6 +285,7 @@ async def ingest_document_endpoint(
     normalized_url = _normalize_optional_text(url)
     normalized_text = _normalize_optional_text(prd_text)
     normalized_source_id = _normalize_optional_text(source_id)
+    normalized_title = _normalize_optional_text(title)
 
     has_file = file is not None and bool((file.filename or "").strip())
     has_url = bool(normalized_url)
@@ -316,17 +317,17 @@ async def ingest_document_endpoint(
             name_lower = filename.lower()
             if name_lower.endswith(".pdf"):
                 result = await anyio.to_thread.run_sync(
-                    lambda: ingest_pdf(content, filename, title=title)
+                    lambda: ingest_pdf(content, filename, title=normalized_title)
                 )
             elif name_lower.endswith(".docx"):
                 result = await anyio.to_thread.run_sync(
-                    lambda: ingest_docx(content, filename, title=title)
+                    lambda: ingest_docx(content, filename, title=normalized_title)
                 )
             elif name_lower.endswith((".txt", ".md")):
                 text = content.decode("utf-8", errors="ignore")
                 sid = filename.replace(" ", "-").lower()
                 result = await anyio.to_thread.run_sync(
-                    lambda: ingest_text(text, sid, title or filename)
+                    lambda: ingest_text(text, sid, normalized_title or filename)
                 )
             else:
                 raise HTTPException(
@@ -340,7 +341,7 @@ async def ingest_document_endpoint(
             }
 
         elif has_url:
-            result = await anyio.to_thread.run_sync(lambda: ingest_url(normalized_url, title=title))
+            result = await anyio.to_thread.run_sync(lambda: ingest_url(normalized_url, title=normalized_title))
             return {
                 "message": f"Ingested URL → {result.get('chunk_count', 0)} chunks.",
                 "source": f"url ({normalized_url})",
@@ -349,7 +350,7 @@ async def ingest_document_endpoint(
 
         else:
             result = await anyio.to_thread.run_sync(
-                lambda: ingest_text(normalized_text, normalized_source_id, title or normalized_source_id)
+                lambda: ingest_text(normalized_text, normalized_source_id, normalized_title or normalized_source_id)
             )
             return {
                 "message": f"Ingested text '{normalized_source_id}' → {result.get('chunk_count', 0)} chunks.",
