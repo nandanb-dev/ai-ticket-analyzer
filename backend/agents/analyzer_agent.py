@@ -139,11 +139,18 @@ def _rag_context_node(state: AnalyzerState) -> dict:
         raw_tickets = state.get("raw_tickets") or []
         user_context = state.get("user_context") or ""
 
-        # Build a representative query from ticket summaries + user context
-        ticket_summaries = " | ".join(
-            t.get("summary", "") for t in raw_tickets[:10] if t.get("summary")
-        )
-        query_parts = [p for p in [ticket_summaries, user_context] if p.strip()]
+        # Build a representative query from ticket summaries/descriptions/labels + user context
+        ticket_blurbs = []
+        for ticket in raw_tickets[:10]:
+            summary = ticket.get("summary", "") or ""
+            description = ticket.get("description", "") or ""
+            labels = " ".join(ticket.get("labels", []) or [])
+            blob = " | ".join([part for part in [summary, description, labels] if part.strip()])
+            if blob:
+                ticket_blurbs.append(blob)
+
+        ticket_context = " || ".join(ticket_blurbs)
+        query_parts = [p for p in [ticket_context, user_context] if p.strip()]
         if not query_parts:
             return {"rag_context": "", "rag_citations": []}
 
@@ -176,6 +183,7 @@ def _analyze_node(state: AnalyzerState) -> dict:
             "tickets_json": tickets_json,
             "user_context": state.get("user_context") or "No additional context provided.",
             "rag_context": rag_context,
+            "rag_citations": json.dumps(state.get("rag_citations") or [], ensure_ascii=False),
         })
         return {"analysis": analysis}
     except Exception as exc:

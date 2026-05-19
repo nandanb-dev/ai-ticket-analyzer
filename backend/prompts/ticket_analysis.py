@@ -191,12 +191,16 @@ Additional context / SRS provided by the user:
 Historical knowledge base context (retrieved from similar past tickets, architecture docs, and engineering notes):
 {rag_context}
 
+Retrieved source citations (JSON):
+{rag_citations}
+
 Use the historical context above to:
   • Reference similar historical issues and how they were resolved
   • Suggest implementation approaches proven to work in this codebase
   • Identify known risks or failure patterns from past work
   • Improve complexity/risk estimates using real precedents
   • Cite sources in role_findings where relevant (e.g. "Per [1] PROJ-88, this pattern caused …")
+If citations are provided, use bracketed references that match citation order: [1], [2], [3].
 If the historical context is empty, proceed with your standard analysis.
 """
 
