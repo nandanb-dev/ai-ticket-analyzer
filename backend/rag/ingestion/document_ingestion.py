@@ -14,6 +14,7 @@ No files are saved to disk; all content is processed in-memory.
 
 import hashlib
 import logging
+import os
 import re
 from typing import Optional
 
@@ -22,6 +23,72 @@ from rag.ingestion.base import ingest_document
 from rag.models import DocumentRecord
 
 logger = logging.getLogger(__name__)
+
+
+# Exact filename -> canonical doc_type mapping for known knowledge-base files.
+DOC_TYPE_MAP = {
+    "incident_tickets.md": "incident",
+    "rca_documents.md": "rca",
+    "runbooks.md": "runbook",
+    "adrs.md": "adr",
+    "engineering_guidelines.md": "guideline",
+    "completed_tickets.md": "ticket",
+}
+
+
+def _derive_doc_type_and_severity(name_hint: str) -> tuple[str, Optional[str]]:
+    """
+    Derive doc_type and severity_level from a filename-like hint.
+
+        Rules:
+        - If name contains 'incident' -> doc_type='incident', severity_level='p1_p2'
+        - If name contains 'rca'      -> doc_type='rca', severity_level='p1_p2'
+        - If name contains known canonical keywords (runbook/adr/guideline/ticket),
+            map to that canonical doc_type with severity_level=None
+        - Otherwise doc_type is derived from the filename stem, severity_level=None
+    """
+    raw = (name_hint or "").strip().lower()
+    if not raw:
+        return "unknown", None
+
+    # Prefer exact filename mapping when available.
+    filename = os.path.basename(raw)
+    mapped = DOC_TYPE_MAP.get(filename)
+    if mapped:
+        if mapped in {"incident", "rca"}:
+            return mapped, "p1_p2"
+        return mapped, None
+
+    if "incident" in raw:
+        return "incident", "p1_p2"
+    if "rca" in raw:
+        return "rca", "p1_p2"
+
+    normalized = re.sub(r"[^a-z0-9]+", "_", raw)
+    keyword_fallbacks = [
+        (r"(^|_)runbooks?(_|$)", "runbook"),
+        (r"(^|_)adrs?(_|$)", "adr"),
+        (r"(^|_)engineering_guidelines?(_|$)", "guideline"),
+        (r"(^|_)guidelines?(_|$)", "guideline"),
+        (r"(^|_)completed_tickets?(_|$)", "ticket"),
+        (r"(^|_)tickets?(_|$)", "ticket"),
+    ]
+    for pattern, doc_type in keyword_fallbacks:
+        if re.search(pattern, normalized):
+            return doc_type, None
+
+    stem = re.sub(r"\.[a-z0-9]{1,8}$", "", raw)  # drop extension when present
+    stem = re.sub(r"[^a-z0-9]+", "_", stem).strip("_")
+    return stem or "unknown", None
+
+
+def _build_metadata(name_hint: str, base: Optional[dict] = None) -> dict:
+    """Attach required metadata fields used by chunk-level grounding rules."""
+    doc_type, severity_level = _derive_doc_type_and_severity(name_hint)
+    merged = dict(base or {})
+    merged["doc_type"] = doc_type
+    merged["severity_level"] = severity_level
+    return merged
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -48,7 +115,7 @@ def ingest_pdf(content: bytes, filename: str, title: Optional[str] = None) -> di
         title=title or filename,
         raw_content=text,
         source_url=None,
-        metadata={"filename": filename},
+        metadata=_build_metadata(filename, {"filename": filename}),
     )
     return ingest_document(doc)
 
@@ -75,7 +142,7 @@ def ingest_docx(content: bytes, filename: str, title: Optional[str] = None) -> d
         title=title or filename,
         raw_content=text,
         source_url=None,
-        metadata={"filename": filename},
+        metadata=_build_metadata(filename, {"filename": filename}),
     )
     return ingest_document(doc)
 
@@ -101,13 +168,14 @@ def ingest_text(
         Ingestion result dict: {document_id, chunk_count, embedded_count}.
     """
     cleaned = clean_document(text, source_type="text")
+    name_hint = source_id or title
     doc = DocumentRecord(
         source_type="text",
         source_id=source_id,
         title=title,
         raw_content=cleaned,
         source_url=source_url,
-        metadata=metadata or {},
+        metadata=_build_metadata(name_hint, metadata),
     )
     return ingest_document(doc)
 
@@ -136,7 +204,7 @@ def ingest_url(url: str, title: Optional[str] = None) -> dict:
         title=title or detected_title or url,
         raw_content=text,
         source_url=url,
-        metadata={"original_url": url},
+        metadata=_build_metadata(title or detected_title or url, {"original_url": url}),
     )
     return ingest_document(doc)
 
