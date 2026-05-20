@@ -2218,6 +2218,171 @@ textarea { resize: vertical; }
   transform: translateY(-1px);
 }
 
+.btn-primary,
+.btn-secondary {
+  padding: 9px 18px;
+  border-radius: var(--r-pill);
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all 140ms ease;
+  border: none;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--teal-mid), var(--teal-deep));
+  color: white;
+  box-shadow: 0 2px 8px rgba(10, 100, 96, 0.25);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(10, 100, 96, 0.3);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: white;
+  color: var(--ink);
+  border: 1.5px solid var(--line);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(18, 32, 42, 0.04);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Radio Group ────────────────────────────────────────────────── */
+
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.radio-option {
+  position: relative;
+  display: block;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.radio-option:hover {
+  border-color: rgba(10, 100, 96, 0.3);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.radio-option.selected {
+  border-color: rgba(10, 100, 96, 0.5);
+  background: rgba(10, 100, 96, 0.05);
+  box-shadow: 0 0 0 3px rgba(10, 100, 96, 0.08);
+}
+
+.radio-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.radio-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.radio-content svg {
+  flex-shrink: 0;
+  color: var(--teal-mid);
+}
+
+.radio-option.selected .radio-content svg {
+  color: var(--teal-deep);
+}
+
+.radio-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.radio-text strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.radio-text span {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.radio-option.selected .radio-text strong {
+  color: var(--teal-deep);
+}
+
+/* ── RAG Action Buttons ─────────────────────────────────────────── */
+
+.rag-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 150ms ease;
+  font-family: var(--font-sans);
+}
+
+.rag-action-btn:hover:not(:disabled) {
+  border-color: rgba(10, 100, 96, 0.4);
+  background: rgba(10, 100, 96, 0.05);
+  border-style: solid;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(10, 100, 96, 0.1);
+}
+
+.rag-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rag-action-btn svg {
+  flex-shrink: 0;
+  color: var(--teal-mid);
+}
+
+.rag-action-btn:hover:not(:disabled) svg {
+  color: var(--teal-deep);
+}
+
+.rag-action-btn span {
+  flex: 1;
+  text-align: left;
+}
+
 /* ══════════════════════════════════════════════════════════════════
    ANIMATIONS
    ══════════════════════════════════════════════════════════════════ */

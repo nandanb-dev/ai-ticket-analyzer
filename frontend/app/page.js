@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
-import { Paperclip, FileText, X, Send, Search, Square, Trash2 } from "lucide-react";
+import { Paperclip, FileText, X, Send, Search, Square, Trash2, Upload, Ticket, BookOpen } from "lucide-react";
 import { detectAnalyzeIntent } from "./utils";
 import { ANALYZE_INTENT_RE } from "./constants";
 import API_BASE_URL from "./config";
@@ -10,6 +10,8 @@ import MessageBubble from "./components/MessageBubble";
 import DraftPanel from "./components/DraftPanel";
 import AnalysisCard from "./components/AnalysisCard";
 import ConfirmModal from "./components/ConfirmModal";
+import JiraIngestionModal from "./components/JiraIngestionModal";
+import ConfluenceIngestionModal from "./components/ConfluenceIngestionModal";
 import { normalizeRagCitations } from "./utils";
 
 function buildPendingTicketsFromAnalysis(analysis) {
@@ -57,6 +59,8 @@ export default function HomePage() {
   const [ingestionHistory, setIngestionHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [inspectorTab, setInspectorTab] = useState("analysis");
+  const [showJiraModal, setShowJiraModal] = useState(false);
+  const [showConfluenceModal, setShowConfluenceModal] = useState(false);
   const fileInputRef = useRef(null);
   const ragFileInputRef = useRef(null);
   const textareaRef = useRef(null);
@@ -426,6 +430,66 @@ export default function HomePage() {
     } finally {
       setIsUploadingToRag(false);
       if (ragFileInputRef.current) ragFileInputRef.current.value = "";
+    }
+  }
+
+  async function handleIngestJira(params) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/rag/ingest/jira`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to ingest Jira tickets");
+      }
+
+      toast.success(
+        `Ingested ${data.tickets_ingested} Jira ticket(s) → ${data.total_chunks} chunks created`
+      );
+
+      // Reload ingestion history
+      const historyResponse = await fetch(`${API_BASE_URL}/rag/documents?page=1&page_size=50`);
+      if (historyResponse.ok) {
+        const historyData = await historyResponse.json();
+        setIngestionHistory(historyData.documents || []);
+      }
+    } catch (error) {
+      toast.error(`Failed to ingest Jira tickets: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async function handleIngestConfluence(params) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/rag/ingest/confluence`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to ingest Confluence pages");
+      }
+
+      const pageCount = data.pages_ingested || 1;
+      const chunkCount = data.total_chunks || data.results?.[0]?.chunk_count || 0;
+      toast.success(
+        `Ingested ${pageCount} Confluence page(s) → ${chunkCount} chunks created`
+      );
+
+      // Reload ingestion history
+      const historyResponse = await fetch(`${API_BASE_URL}/rag/documents?page=1&page_size=50`);
+      if (historyResponse.ok) {
+        const historyData = await historyResponse.json();
+        setIngestionHistory(historyData.documents || []);
+      }
+    } catch (error) {
+      toast.error(`Failed to ingest Confluence pages: ${error.message}`);
+      throw error;
     }
   }
 
@@ -904,11 +968,11 @@ export default function HomePage() {
             </div>
 
             {/* Chat attachments section */}
-            <div style={{ marginBottom: "24px" }}>
-              <p style={{ fontSize: "0.85rem", fontWeight: "600", marginBottom: "12px", color: "var(--text-secondary)" }}>
-                Chat Context
-              </p>
-              {session?.attachments?.length ? (
+            {session?.attachments?.length > 0 && (
+              <div style={{ marginBottom: "24px" }}>
+                <p style={{ fontSize: "0.85rem", fontWeight: "600", marginBottom: "12px", color: "var(--text-secondary)" }}>
+                  Chat Context
+                </p>
                 <div 
                   className="summary-list"
                   style={{
@@ -966,36 +1030,39 @@ export default function HomePage() {
                     </div>
                   ))}
                 </div>
-              ) : (
-                <p className="muted-copy">No chat attachments yet.</p>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* RAG documents section */}
             <div>
               <p style={{ fontSize: "0.85rem", fontWeight: "600", marginBottom: "12px", color: "var(--text-secondary)" }}>
                 Knowledge Base
               </p>
-              <div style={{ marginBottom: "12px" }}>
+              <div style={{ marginBottom: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
                 <button
                   type="button"
-                  className="icon-btn"
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    fontSize: "0.9rem",
-                    marginBottom: "8px",
-                    border: "1px dashed var(--border-subtle)",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                    backgroundColor: "rgba(58, 134, 255, 0.05)",
-                    color: "var(--text-primary)",
-                    transition: "all 0.2s",
-                  }}
+                  className="rag-action-btn"
                   onClick={() => ragFileInputRef.current?.click()}
                   disabled={isUploadingToRag}
                 >
-                  {isUploadingToRag ? "Uploading..." : "➕ Add documents to RAG"}
+                  <Upload size={16} />
+                  <span>{isUploadingToRag ? "Uploading..." : "Add documents"}</span>
+                </button>
+                <button
+                  type="button"
+                  className="rag-action-btn"
+                  onClick={() => setShowJiraModal(true)}
+                >
+                  <Ticket size={16} />
+                  <span>Add Jira tickets</span>
+                </button>
+                <button
+                  type="button"
+                  className="rag-action-btn"
+                  onClick={() => setShowConfluenceModal(true)}
+                >
+                  <BookOpen size={16} />
+                  <span>Add Confluence pages</span>
                 </button>
                 <input
                   ref={ragFileInputRef}
@@ -1102,16 +1169,6 @@ export default function HomePage() {
               )}
             </div>
           </section>
-
-          <section className="glass-panel side-panel">
-            <div className="panel-header slim">
-              <div>
-                <p className="panel-kicker">Result</p>
-                <h3>Last Jira creation output</h3>
-              </div>
-            </div>
-            <pre className="result-panel">{session?.last_created ? JSON.stringify(session.last_created, null, 2) : "Nothing created yet."}</pre>
-          </section>
         </aside>
       </section>
 
@@ -1124,6 +1181,18 @@ export default function HomePage() {
         confirmText="Remove"
         cancelText="Cancel"
         variant="danger"
+      />
+
+      <JiraIngestionModal
+        isOpen={showJiraModal}
+        onClose={() => setShowJiraModal(false)}
+        onSubmit={handleIngestJira}
+      />
+
+      <ConfluenceIngestionModal
+        isOpen={showConfluenceModal}
+        onClose={() => setShowConfluenceModal(false)}
+        onSubmit={handleIngestConfluence}
       />
     </main>
   );
