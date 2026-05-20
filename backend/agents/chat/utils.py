@@ -1,7 +1,10 @@
 from textwrap import shorten
-from typing import Any
+from typing import Any, List, Tuple
+import logging
 
 from agents.chat.models import ChatState
+
+logger = logging.getLogger(__name__)
 
 
 def format_messages(messages: list[dict[str, str]]) -> str:
@@ -45,3 +48,63 @@ def summarize_ticket_preview(ticket_data: dict[str, Any]) -> str:
         f"Preview:\n{preview_lines}\n\n"
         "Review the draft below. When it looks right, confirm to create the tickets in Jira."
     )
+
+
+def retrieve_rag_context(query: str, project_key: str = "") -> Tuple[str, List[dict]]:
+    """
+    Retrieve relevant context from the RAG knowledge base.
+    
+    Args:
+        query: The search query (user message + context)
+        project_key: Optional project key (reserved for future filtering)
+    
+    Returns:
+        Tuple of (context_text, citations)
+    """
+    try:
+        from rag.retrieval import retrieve
+        from rag.context_builder import build_context
+        
+        # Retrieve relevant chunks
+        # Note: project_key filtering can be added when MetadataFilter supports it
+        results = retrieve(
+            query=query,
+            top_k=30,
+            rerank_top_n=10,
+            metadata_filter=None,
+        )
+        
+        if not results:
+            return "", []
+        
+        # Build context string and citations
+        context_text, citations = build_context(results, token_budget=2000)
+        
+        # Convert citations to dicts for JSON serialization
+        citation_dicts = [
+            {
+                "source_type": c.source_type,
+                "source_id": c.source_id,
+                "title": c.title,
+                "source_url": c.source_url,
+                "excerpt": c.excerpt,
+                "score": c.score,
+            }
+            for c in citations
+        ]
+        
+        return context_text, citation_dicts
+        
+    except ImportError:
+        logger.warning("RAG module not available, skipping RAG retrieval")
+        return "", []
+    except Exception as exc:
+        logger.warning(f"RAG retrieval failed: {exc}")
+        return "", []
+
+
+def format_rag_context(rag_text: str) -> str:
+    """Format RAG context for inclusion in prompts."""
+    if not rag_text:
+        return "No relevant knowledge base content found."
+    return f"Relevant context from knowledge base:\n\n{rag_text}"

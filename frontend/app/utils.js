@@ -17,15 +17,51 @@ function detectAnalyzeIntent(text) {
 }
 
 function renderContent(content) {
+  // Parse inline markdown: **bold**, *italic*, _italic_, `code`
+  const parseInlineMarkdown = (text) => {
+    // Replace **bold** and __bold__
+    let parsed = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    parsed = parsed.replace(/__(.+?)__/g, '<strong>$1</strong>');
+    // Replace *italic* and _italic_ (but not inside words)
+    parsed = parsed.replace(/(?<!\w)\*([^*]+)\*(?!\w)/g, '<em>$1</em>');
+    parsed = parsed.replace(/(?<!\w)_([^_]+)_(?!\w)/g, '<em>$1</em>');
+    // Replace `code`
+    parsed = parsed.replace(/`([^`]+)`/g, '<code>$1</code>');
+    return parsed;
+  };
+
   return content.split("\n").map((line, i) => {
+    // Handle headers
+    if (line.startsWith("### ")) {
+      return <h4 key={i} dangerouslySetInnerHTML={{ __html: parseInlineMarkdown(line.slice(4)) }} />;
+    }
+    if (line.startsWith("## ")) {
+      return <h3 key={i} dangerouslySetInnerHTML={{ __html: parseInlineMarkdown(line.slice(3)) }} />;
+    }
+    if (line.startsWith("# ")) {
+      return <h2 key={i} dangerouslySetInnerHTML={{ __html: parseInlineMarkdown(line.slice(2)) }} />;
+    }
+    // Handle numbered lists (1. 2. 3.)
+    const numberedMatch = line.match(/^(\d+)\.\s+(.+)/);
+    if (numberedMatch) {
+      return (
+        <div key={i} className="msg-numbered-item">
+          <span className="msg-number">{numberedMatch[1]}.</span>
+          <span dangerouslySetInnerHTML={{ __html: parseInlineMarkdown(numberedMatch[2]) }} />
+        </div>
+      );
+    }
+    // Handle bullet points
     if (line.startsWith("- ")) {
       const text = line.slice(2);
-      return text.length <= 40
-        ? <div key={i} className="msg-bullet">{text}</div>
-        : <div key={i} className="msg-list-item">{text}</div>;
+      return (
+        <div key={i} className={text.length <= 40 ? "msg-bullet" : "msg-list-item"}>
+          <span dangerouslySetInnerHTML={{ __html: parseInlineMarkdown(text) }} />
+        </div>
+      );
     }
     if (line.trim() === "") return <br key={i} />;
-    return <p key={i}>{line}</p>;
+    return <p key={i} dangerouslySetInnerHTML={{ __html: parseInlineMarkdown(line) }} />;
   });
 }
 

@@ -3,12 +3,81 @@ from typing import Any, Dict, List, Literal, Optional, TypedDict
 from pydantic import BaseModel, Field
 
 
-class IntentDecision(BaseModel):
-    action: Literal["respond", "generate_tickets", "confirm_tickets", "ask_for_more_context"] = Field(
-        description="Best next action for this user turn."
+# ── Clarification Models ─────────────────────────────────────────────────────
+
+
+class ClarificationCategory(BaseModel):
+    """Identifies what type of information is missing"""
+    category: Literal[
+        "requirements",
+        "acceptance_criteria",
+        "dependencies",
+        "implementation_details",
+        "security",
+        "performance",
+        "ux_flow"
+    ] = Field(description="Category of missing information")
+    severity: Literal["blocking", "important", "nice_to_have"] = Field(
+        description="How critical this clarification is before proceeding"
     )
+    description: str = Field(description="What specifically is unclear or missing")
+
+
+class ClarificationQuestion(BaseModel):
+    """A targeted question to ask the user"""
+    question: str = Field(description="The clarifying question to ask")
+    category: str = Field(description="Which category this addresses")
+    suggestions: List[str] = Field(
+        default_factory=list,
+        description="2-4 intelligent suggestions/options the user can choose from"
+    )
+    follow_up_hint: str = Field(
+        default="",
+        description="What follow-up question might come next based on the answer"
+    )
+
+
+class ClarificationAnalysis(BaseModel):
+    """Full analysis of what clarifications are needed"""
+    needs_clarification: bool = Field(
+        description="Whether clarification is required before proceeding"
+    )
+    readiness_score: int = Field(
+        description="1-10 score of how ready this is for development (10=ready)"
+    )
+    summary: str = Field(description="Brief summary of the clarification needs")
+    gaps: List[ClarificationCategory] = Field(default_factory=list)
+    questions: List[ClarificationQuestion] = Field(default_factory=list)
+    can_proceed_with_assumptions: bool = Field(
+        default=False,
+        description="Whether we can proceed by making reasonable assumptions"
+    )
+    assumptions_if_proceed: List[str] = Field(
+        default_factory=list,
+        description="Assumptions we would make if proceeding without full clarification"
+    )
+
+
+# ── Intent Decision Model ────────────────────────────────────────────────────
+
+
+class IntentDecision(BaseModel):
+    action: Literal[
+        "respond",
+        "generate_tickets",
+        "confirm_tickets",
+        "ask_for_more_context",
+        "clarify_requirements"
+    ] = Field(description="Best next action for this user turn.")
     reason: str = Field(description="Short explanation for the selected action.")
     missing_information: List[str] = Field(default_factory=list)
+    clarification_priority: Literal["blocking", "important", "optional"] = Field(
+        default="optional",
+        description="How urgent the clarification is"
+    )
+
+
+# ── Chat State ───────────────────────────────────────────────────────────────
 
 
 class ChatState(TypedDict):
@@ -26,3 +95,5 @@ class ChatState(TypedDict):
     generated_tickets: Optional[Dict[str, Any]]
     created: Optional[Dict[str, Any]]
     error: Optional[str]
+    clarification_analysis: Optional[Dict[str, Any]]
+    clarification_round: int
