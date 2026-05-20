@@ -8,6 +8,8 @@ from agents.chat.utils import (
     build_generation_context,
     format_attachments,
     format_messages,
+    format_rag_context,
+    retrieve_rag_context,
     summarize_ticket_preview,
 )
 
@@ -26,6 +28,7 @@ def decide_node(state: ChatState) -> dict[str, Any]:
         decision = get_decision_chain().invoke({
             "forced_action": state.get("forced_action") or "none",
             "awaiting_confirmation": state["awaiting_confirmation"],
+            "has_pending_tickets": bool(state.get("pending_tickets")),
             "project_key": state["project_key"] or "not set",
             "history_text": format_messages(state["conversation_history"]),
             "attachment_text": format_attachments(state["attachments"]),
@@ -93,10 +96,22 @@ def confirm_tickets_node(state: ChatState) -> dict[str, Any]:
 def clarify_requirements_node(state: ChatState) -> dict[str, Any]:
     """Analyze requirements and generate targeted clarification questions"""
     try:
+        # Build query for RAG retrieval from user message and context
+        rag_query = state["latest_user_message"]
+        if state["context_text"]:
+            rag_query = f"{rag_query}\n{state['context_text']}"
+        
+        # Retrieve relevant context from RAG knowledge base
+        rag_text, rag_citations = retrieve_rag_context(
+            query=rag_query,
+            project_key=state.get("project_key", "")
+        )
+        
         analysis = get_clarification_chain().invoke({
             "history_text": format_messages(state["conversation_history"]),
             "attachment_text": format_attachments(state["attachments"]),
             "context_text": state["context_text"] or "",
+            "rag_context": format_rag_context(rag_text),
             "latest_user_message": state["latest_user_message"],
         })
 
@@ -144,11 +159,24 @@ def clarify_requirements_node(state: ChatState) -> dict[str, Any]:
                     "\n---\n\n_Alternatively, reply 'proceed with assumptions' and I'll generate "
                     "tickets with reasonable defaults that you can refine afterward._"
                 )
+        
+        # Add RAG citations if available
+        if rag_citations:
+            reply_parts.append("\n---\n_Sources consulted from knowledge base:_")
+            for citation in rag_citations[:3]:  # Show top 3 sources
+                source_label = citation.get("title") or citation.get("source_id", "Unknown")
+                reply_parts.append(f"- {source_label}")
 
-        return {
+        result = {
             "reply": "\n".join(reply_parts),
             "clarification_analysis": analysis.model_dump(),
         }
+        
+        # Include RAG citations in the analysis
+        if rag_citations:
+            result["clarification_analysis"]["rag_citations"] = rag_citations
+        
+        return result
     except Exception as exc:
         return {"error": f"Clarification analysis failed: {exc}"}
 

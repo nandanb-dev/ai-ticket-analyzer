@@ -46,6 +46,7 @@ def get_decision_chain():
             "human",
             "Forced action: {forced_action}\n"
             "Awaiting confirmation: {awaiting_confirmation}\n"
+            "Has pending tickets: {has_pending_tickets}\n"
             "Project key: {project_key}\n"
             "Conversation:\n{history_text}\n\n"
             "Known documents:\n{attachment_text}\n\n"
@@ -103,9 +104,11 @@ def get_clarification_chain():
             "Analyze this for development readiness:\n\n"
             "## Conversation Context\n{history_text}\n\n"
             "## Uploaded Documents\n{attachment_text}\n\n"
+            "## Knowledge Base Context (RAG)\n{rag_context}\n\n"
             "## Additional Context\n{context_text}\n\n"
             "## Latest Input\n{latest_user_message}\n\n"
             "Identify gaps and generate clarifying questions. "
+            "Use the knowledge base context to inform your suggestions and identify patterns from similar past requirements. "
             "Focus on what's truly blocking development vs nice-to-have details."
         ),
     ])
