@@ -857,11 +857,11 @@ export default function HomePage() {
             </div>
 
             {/* Chat attachments section */}
-            <div style={{ marginBottom: "24px" }}>
-              <p style={{ fontSize: "0.85rem", fontWeight: "600", marginBottom: "12px", color: "var(--text-secondary)" }}>
-                Chat Context
-              </p>
-              {session?.attachments?.length ? (
+            {session?.attachments?.length > 0 && (
+              <div style={{ marginBottom: "24px" }}>
+                <p style={{ fontSize: "0.85rem", fontWeight: "600", marginBottom: "12px", color: "var(--text-secondary)" }}>
+                  Chat Context
+                </p>
                 <div 
                   className="summary-list"
                   style={{
@@ -919,10 +919,8 @@ export default function HomePage() {
                     </div>
                   ))}
                 </div>
-              ) : (
-                <p className="muted-copy">No chat attachments yet.</p>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* RAG documents section */}
             <div>
@@ -1054,16 +1052,6 @@ export default function HomePage() {
                 <p className="muted-copy">No documents added to knowledge base yet.</p>
               )}
             </div>
-          </section>
-
-          <section className="glass-panel side-panel">
-            <div className="panel-header slim">
-              <div>
-                <p className="panel-kicker">Result</p>
-                <h3>Last Jira creation output</h3>
-              </div>
-            </div>
-            <pre className="result-panel">{session?.last_created ? JSON.stringify(session.last_created, null, 2) : "Nothing created yet."}</pre>
           </section>
         </aside>
       </section>
