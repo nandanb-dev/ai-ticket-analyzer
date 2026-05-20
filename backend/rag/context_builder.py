@@ -87,6 +87,8 @@ def build_context(
                     " …" if len(result.content) > _CITATION_EXCERPT_CHARS else ""
                 ),
                 score=round(result.score, 4),
+                doc_type=(result.metadata or {}).get("doc_type"),
+                severity_level=(result.metadata or {}).get("severity_level"),
             )
         )
 
@@ -144,6 +146,8 @@ def format_citations_for_response(citations: List[Citation]) -> List[dict]:
             "source_url": c.source_url,
             "excerpt": c.excerpt,
             "relevance_score": c.score,
+            "doc_type": getattr(c, "doc_type", None),
+            "severity_level": getattr(c, "severity_level", None),
         }
         for c in citations
     ]

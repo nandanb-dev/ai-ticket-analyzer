@@ -36,6 +36,9 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
 # Sentence boundary (greedy split at . ! ? followed by space/newline)
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
 
+# Ticket boundary for completed tickets knowledge docs
+_COMPLETED_TICKET_BOUNDARY_RE = re.compile(r"^##\s+(PROJ-[A-Za-z0-9-]+)\b.*$", re.MULTILINE)
+
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
@@ -53,18 +56,22 @@ def chunk_document(doc: DocumentRecord) -> List[ChunkRecord]:
     if not text.strip():
         return []
 
-    raw_chunks = _recursive_split(text)
+    special_completed_tickets_mode = _is_completed_tickets_doc(doc)
+    if special_completed_tickets_mode:
+        raw_chunks = _split_completed_tickets_by_boundary(text)
+    else:
+        raw_chunks = _recursive_split(text)
 
     chunks: List[ChunkRecord] = []
     prev_tail = ""
 
     for idx, (chunk_text, heading_ctx) in enumerate(raw_chunks):
         # Prepend overlap from previous chunk
-        if prev_tail:
+        if prev_tail and not special_completed_tickets_mode:
             chunk_text = prev_tail + "\n" + chunk_text
 
         chunk_text = chunk_text.strip()
-        if len(chunk_text) < _MIN_CHARS // 2:
+        if (not special_completed_tickets_mode) and len(chunk_text) < _MIN_CHARS // 2:
             # Too small even with overlap — merge into previous if possible
             if chunks:
                 prev = chunks[-1]
@@ -73,7 +80,7 @@ def chunk_document(doc: DocumentRecord) -> List[ChunkRecord]:
             continue
 
         # Capture tail for next chunk's overlap
-        prev_tail = _tail_overlap(chunk_text)
+        prev_tail = _tail_overlap(chunk_text) if not special_completed_tickets_mode else ""
 
         # Inherit metadata from the document
         chunk = ChunkRecord(
@@ -110,6 +117,47 @@ def _recursive_split(text: str) -> List[Tuple[str, str]]:
     results: List[Tuple[str, str]] = []
     _split_section(text, heading_ctx="", results=results)
     return results
+
+
+def _is_completed_tickets_doc(doc: DocumentRecord) -> bool:
+    """
+    Detect docs that should be split exactly one ticket per chunk.
+
+    Matches on common identifiers like:
+    - 06_completed_tickets.md
+    - completed_tickets
+    """
+    candidates = [
+        (doc.source_id or ""),
+        (doc.title or ""),
+        str((doc.metadata or {}).get("filename") or ""),
+    ]
+    haystack = " ".join(candidates).lower()
+    return "completed_tickets" in haystack
+
+
+def _split_completed_tickets_by_boundary(text: str) -> List[Tuple[str, str]]:
+    """
+    Split completed tickets markdown at each '## PROJ-' heading.
+
+    Each returned chunk contains exactly one ticket block, beginning at the
+    boundary line and ending before the next boundary.
+    """
+    matches = list(_COMPLETED_TICKET_BOUNDARY_RE.finditer(text))
+    if not matches:
+        return _recursive_split(text)
+
+    chunks: List[Tuple[str, str]] = []
+    for i, match in enumerate(matches):
+        start = match.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        block = text[start:end].strip()
+        if not block:
+            continue
+        ticket_key = match.group(1).strip()
+        chunks.append((block, ticket_key))
+
+    return chunks if chunks else _recursive_split(text)
 
 
 def _split_section(
