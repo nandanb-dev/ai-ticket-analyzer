@@ -78,6 +78,29 @@ WHAT TO CHECK FOR EACH TICKET
     • Are code review, tests, documentation, and deploy steps implied or stated?
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SEVERITY ESCALATION RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If any retrieved source indicates historical production failure context and matches
+the ticket pattern/risk under analysis, escalate severity as follows:
+
+1. If a retrieved source has doc_type of "incident" or "rca" and its content
+  clearly matches the same failure pattern in the current ticket, the issue
+  severity MUST be "critical" (never "major").
+
+1b. Fallback check for missing/null metadata:
+  If any citation's source_id contains the substring "incident" or "rca"
+  (case-insensitive), treat that source as an incident/rca document and apply
+  the same severity escalation rule to "critical".
+
+2. For this escalation case, the issue description MUST explicitly include:
+  • incident id/source id
+  • incident/rca date (if present in the retrieved source)
+  • what happened (brief failure summary from the retrieved source)
+
+3. For this escalation case, include grounded_in with the matching source_id.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT  (strict JSON — no markdown fences, no extra text)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -104,19 +127,22 @@ OUTPUT FORMAT  (strict JSON — no markdown fences, no extra text)
           "severity": "critical",
           "category": "security",
           "description": "No server-side token validation mentioned.",
-          "suggestion": "Add explicit AC: GIVEN an expired/invalid token WHEN the API receives a request THEN it returns 401 Unauthorized."
+          "suggestion": "Add explicit AC: GIVEN an expired/invalid token WHEN the API receives a request THEN it returns 401 Unauthorized.",
+          "grounded_in": "INC-2024-0192"
         },
         {
           "severity": "major",
           "category": "acceptance_criteria",
           "description": "Only 1 AC defined; minimum 3 required for a Story.",
-          "suggestion": "Add ACs for: (a) empty credential submission, (b) account locked after N failed attempts, (c) successful redirect to originally requested URL after login."
+          "suggestion": "Add ACs for: (a) empty credential submission, (b) account locked after N failed attempts, (c) successful redirect to originally requested URL after login.",
+          "grounded_in": ""
         },
         {
           "severity": "minor",
           "category": "story_points",
           "description": "13 points may indicate the story is too large.",
-          "suggestion": "Split into: (1) Authentication flow (5pts) and (2) Session management & token refresh (8pts)."
+          "suggestion": "Split into: (1) Authentication flow (5pts) and (2) Session management & token refresh (8pts).",
+          "grounded_in": ""
         }
       ],
       "suggested_updates": {
@@ -164,6 +190,14 @@ Rules:
 - Edge cases must be specific to the feature — never write generic placeholders.
 - quality_score is 1-10 (10 = production-ready with no issues).
 - overall_score is the weighted average across all tickets.
+- Every item in issues_found must include grounded_in.
+- grounded_in must be the cited source_id when the issue is grounded in retrieved evidence.
+- If a matched retrieved source has doc_type "incident" or "rca", set severity to "critical" and
+  include incident id, date, and what happened in description.
+- Fallback: if citation.source_id contains "incident" or "rca" (case-insensitive), treat it as
+  incident/rca even when doc_type is null/missing, and apply the same escalation rule.
+- If any critical issue is found for a ticket, quality_score must be 5 or below.
+- If two or more critical issues are found for a ticket, quality_score must be 3 or below.
 """
 
 # ── Feedback refinement prompt ────────────────────────────────────────────────
@@ -193,6 +227,8 @@ Historical knowledge base context (retrieved from similar past tickets, architec
 
 Retrieved source citations (JSON):
 {rag_citations}
+
+if any citation is doc_type incident or rca, apply severity escalation rules before determining issue severity.
 
 Use the historical context above to:
   • Reference similar historical issues and how they were resolved
