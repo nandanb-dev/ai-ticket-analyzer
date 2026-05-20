@@ -1592,7 +1592,7 @@ textarea { resize: vertical; }
 
 /* Draft ticket cards */
 .draft-ticket-list {
-  display: flex;
+  display: block;
   align-items: center;
   gap: 8px;
   font-size: 0.85rem;
@@ -1616,6 +1616,11 @@ textarea { resize: vertical; }
 .draft-ticket-card:hover {
   border-color: rgba(10, 100, 96, 0.3);
   box-shadow: var(--shadow-sm);
+}
+
+.draft-ticket-card{
+  width: 100%;
+  padding: 5px;
 }
 
 .draft-ticket-card.epic  { border-left: 3px solid #7a3a9a; }
@@ -1798,13 +1803,13 @@ textarea { resize: vertical; }
 /* ── Project Key Row ────────────────────────────────────────────── */
 
 .project-key-row {
-  display: flex;
+  display: block;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
   background: rgba(255, 255, 255, 0.5);
   border-radius: 8px;
-  margin-bottom: 12px;
+  margin: 12px 0;
   border: 1px solid var(--line);
 }
 
