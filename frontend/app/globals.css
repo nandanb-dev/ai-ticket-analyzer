@@ -2015,6 +2015,49 @@ textarea { resize: vertical; }
   transform: translateY(-1px);
 }
 
+.btn-primary,
+.btn-secondary {
+  padding: 9px 18px;
+  border-radius: var(--r-pill);
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all 140ms ease;
+  border: none;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--teal-mid), var(--teal-deep));
+  color: white;
+  box-shadow: 0 2px 8px rgba(10, 100, 96, 0.25);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(10, 100, 96, 0.3);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: white;
+  color: var(--ink);
+  border: 1.5px solid var(--line);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(18, 32, 42, 0.04);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ══════════════════════════════════════════════════════════════════
    ANIMATIONS
    ══════════════════════════════════════════════════════════════════ */
