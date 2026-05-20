@@ -2,12 +2,14 @@ from typing import Any
 
 from services.jira import push_tickets
 
-from agents.chat.chains import get_decision_chain, get_response_chain, get_ticket_chain
+from agents.chat.chains import get_decision_chain, get_response_chain, get_ticket_chain, get_clarification_chain
 from agents.chat.models import ChatState
 from agents.chat.utils import (
     build_generation_context,
     format_attachments,
     format_messages,
+    format_rag_context,
+    retrieve_rag_context,
     summarize_ticket_preview,
 )
 
@@ -26,6 +28,7 @@ def decide_node(state: ChatState) -> dict[str, Any]:
         decision = get_decision_chain().invoke({
             "forced_action": state.get("forced_action") or "none",
             "awaiting_confirmation": state["awaiting_confirmation"],
+            "has_pending_tickets": bool(state.get("pending_tickets")),
             "project_key": state["project_key"] or "not set",
             "history_text": format_messages(state["conversation_history"]),
             "attachment_text": format_attachments(state["attachments"]),
@@ -88,6 +91,94 @@ def confirm_tickets_node(state: ChatState) -> dict[str, Any]:
         }
     except Exception as exc:
         return {"error": f"JIRA creation failed: {exc}"}
+
+
+def clarify_requirements_node(state: ChatState) -> dict[str, Any]:
+    """Analyze requirements and generate targeted clarification questions"""
+    try:
+        # Build query for RAG retrieval from user message and context
+        rag_query = state["latest_user_message"]
+        if state["context_text"]:
+            rag_query = f"{rag_query}\n{state['context_text']}"
+        
+        # Retrieve relevant context from RAG knowledge base
+        rag_text, rag_citations = retrieve_rag_context(
+            query=rag_query,
+            project_key=state.get("project_key", "")
+        )
+        
+        analysis = get_clarification_chain().invoke({
+            "history_text": format_messages(state["conversation_history"]),
+            "attachment_text": format_attachments(state["attachments"]),
+            "context_text": state["context_text"] or "",
+            "rag_context": format_rag_context(rag_text),
+            "latest_user_message": state["latest_user_message"],
+        })
+
+        # Build conversational response with questions
+        reply_parts = []
+
+        if analysis.readiness_score >= 8:
+            reply_parts.append(
+                f"**Development Readiness: {analysis.readiness_score}/10**\n\n"
+                "The requirements look solid! I can proceed with ticket generation."
+            )
+            if analysis.assumptions_if_proceed:
+                reply_parts.append("\n**Minor assumptions I'll make:**")
+                for assumption in analysis.assumptions_if_proceed:
+                    reply_parts.append(f"- {assumption}")
+            reply_parts.append(
+                "\n\n_Reply with 'generate tickets' to proceed, or provide additional details._"
+            )
+        else:
+            reply_parts.append(
+                f"**Development Readiness: {analysis.readiness_score}/10**\n\n"
+                f"{analysis.summary}\n\n"
+                "I have a few questions to ensure we build the right thing:"
+            )
+
+            # Group questions by priority
+            blocking_categories = {g.category for g in analysis.gaps if g.severity == "blocking"}
+            important_categories = {g.category for g in analysis.gaps if g.severity == "important"}
+
+            blocking = [q for q in analysis.questions if q.category in blocking_categories]
+            important = [q for q in analysis.questions if q.category in important_categories]
+            other = [q for q in analysis.questions if q.category not in blocking_categories and q.category not in important_categories]
+
+            question_num = 1
+            for q in (blocking + important + other)[:5]:  # Limit to 5 questions
+                reply_parts.append(f"\n**{question_num}. {q.question}**")
+                if q.suggestions:
+                    reply_parts.append("   _Suggestions:_")
+                    for suggestion in q.suggestions:
+                        reply_parts.append(f"   - {suggestion}")
+                question_num += 1
+
+            if analysis.can_proceed_with_assumptions:
+                reply_parts.append(
+                    "\n---\n\n_Alternatively, reply 'proceed with assumptions' and I'll generate "
+                    "tickets with reasonable defaults that you can refine afterward._"
+                )
+        
+        # Add RAG citations if available
+        if rag_citations:
+            reply_parts.append("\n---\n_Sources consulted from knowledge base:_")
+            for citation in rag_citations[:3]:  # Show top 3 sources
+                source_label = citation.get("title") or citation.get("source_id", "Unknown")
+                reply_parts.append(f"- {source_label}")
+
+        result = {
+            "reply": "\n".join(reply_parts),
+            "clarification_analysis": analysis.model_dump(),
+        }
+        
+        # Include RAG citations in the analysis
+        if rag_citations:
+            result["clarification_analysis"]["rag_citations"] = rag_citations
+        
+        return result
+    except Exception as exc:
+        return {"error": f"Clarification analysis failed: {exc}"}
 
 
 def route_after_decision(state: ChatState) -> str:

@@ -7,14 +7,16 @@ from langchain_groq import ChatGroq
 from config import CHAT_MODEL, OPENAI_API_KEY, GOOGLE_API_KEY, GROQ_API_KEY
 from prompts.system import SYSTEM_PROMPT
 from prompts.ticket_generation import TICKET_GENERATION_PROMPT
+from prompts.clarification import CLARIFICATION_SYSTEM_PROMPT, DECISION_SYSTEM_PROMPT
 
-from agents.chat.models import IntentDecision
+from agents.chat.models import IntentDecision, ClarificationAnalysis
 
 
 _base_llm = None
 _decision_chain = None
 _response_chain = None
 _ticket_chain = None
+_clarification_chain = None
 
 
 def get_llm() -> ChatGroq: #ChatGoogleGenerativeAI, ChatOpenAI, ChatGroq
@@ -39,22 +41,12 @@ def get_decision_chain():
         return _decision_chain
 
     prompt = ChatPromptTemplate.from_messages([
-        (
-            "system",
-            "You are routing a product-ops chat assistant. "
-            "Pick exactly one action: respond, generate_tickets, confirm_tickets, ask_for_more_context. "
-            "Choose confirm_tickets only when the user is explicitly approving ticket creation or forced_action says so. "
-            "Choose generate_tickets when the user wants ticket decomposition or Jira-ready tickets. "
-            "If the user explicitly requests ticket generation (using words like 'generate', 'draft', 'create tickets') "
-            "and there are uploaded documents OR substantial conversation history, choose generate_tickets. "
-            "Only choose ask_for_more_context if ticket generation is requested but there are NO uploaded documents "
-            "AND NO meaningful requirements in the conversation history. "
-            "Otherwise choose respond."
-        ),
+        ("system", DECISION_SYSTEM_PROMPT),
         (
             "human",
             "Forced action: {forced_action}\n"
             "Awaiting confirmation: {awaiting_confirmation}\n"
+            "Has pending tickets: {has_pending_tickets}\n"
             "Project key: {project_key}\n"
             "Conversation:\n{history_text}\n\n"
             "Known documents:\n{attachment_text}\n\n"
@@ -97,3 +89,28 @@ def get_ticket_chain():
         return _ticket_chain
     _ticket_chain = TICKET_GENERATION_PROMPT | get_llm() | JsonOutputParser()
     return _ticket_chain
+
+
+def get_clarification_chain():
+    """Chain for analyzing requirements and generating clarification questions"""
+    global _clarification_chain
+    if _clarification_chain is not None:
+        return _clarification_chain
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", CLARIFICATION_SYSTEM_PROMPT),
+        (
+            "human",
+            "Analyze this for development readiness:\n\n"
+            "## Conversation Context\n{history_text}\n\n"
+            "## Uploaded Documents\n{attachment_text}\n\n"
+            "## Knowledge Base Context (RAG)\n{rag_context}\n\n"
+            "## Additional Context\n{context_text}\n\n"
+            "## Latest Input\n{latest_user_message}\n\n"
+            "Identify gaps and generate clarifying questions. "
+            "Use the knowledge base context to inform your suggestions and identify patterns from similar past requirements. "
+            "Focus on what's truly blocking development vs nice-to-have details."
+        ),
+    ])
+    _clarification_chain = prompt | get_llm().with_structured_output(ClarificationAnalysis)
+    return _clarification_chain

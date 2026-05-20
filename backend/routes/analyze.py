@@ -4,7 +4,7 @@ routes/analyze.py
 Ticket Analyzer API routes.
 
 Workflow:
-  1. POST /analyze-tickets          → fetch + analyze; returns session_id + analysis
+  1. POST /analyze-tickets          → fetch + analyze; returns session_id + analysis + clarification
   2. POST /analyze-tickets/{id}/feedback → refine analysis with user feedback
   3. POST /analyze-tickets/{id}/apply    → write approved suggestions to JIRA
   4. GET  /analyze-tickets/{id}          → retrieve current analysis for a session
@@ -13,14 +13,19 @@ Workflow:
 import re
 from typing import List, Optional
 import json
+import logging
 
 import anyio
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, Field
 
 from agents.analyzer_agent import run_analyzer_agent, run_apply_agent, run_refine_agent
+from agents.chat.chains import get_clarification_chain
+from agents.chat.utils import retrieve_rag_context, format_rag_context
 from services.analysis_sessions import analysis_sessions
 from services.confluence import get_page_content_as_text
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analyze-tickets", tags=["analyze"])
 
@@ -197,6 +202,45 @@ async def analyze_tickets(req: AnalyzeRequest):
     except KeyError:
         raise HTTPException(status_code=410, detail="Analysis session expired before results could be stored.")
 
+    # Run clarification analysis on the fetched ticket content
+    clarification_analysis = None
+    try:
+        # Build context from analyzed tickets for clarification
+        tickets = result.get("analysis", {}).get("tickets", [])
+        if tickets:
+            ticket_context_parts = []
+            for t in tickets[:5]:  # Limit to first 5 tickets
+                ticket_context_parts.append(
+                    f"Ticket: {t.get('key', 'Unknown')}\n"
+                    f"Summary: {t.get('summary', '')}\n"
+                    f"Description: {t.get('description', '')[:500]}"
+                )
+            ticket_context = "\n\n".join(ticket_context_parts)
+            
+            # Reuse RAG context from analysis (same citations)
+            rag_citations = result.get("rag_citations", [])
+            if rag_citations:
+                rag_text = "\n\n".join([
+                    f"[Source: {c.get('source', 'unknown')}]\n{c.get('content', '')}"
+                    for c in rag_citations[:5]
+                ])
+            else:
+                rag_text = ""
+            
+            # Run clarification chain with same RAG context as analysis
+            clarification_result = await anyio.to_thread.run_sync(
+                lambda: get_clarification_chain().invoke({
+                    "history_text": "",
+                    "attachment_text": "",
+                    "context_text": ticket_context,
+                    "latest_user_message": f"Analyze completeness of these ticket requirements",
+                    "rag_context": format_rag_context(rag_text),
+                })
+            )
+            clarification_analysis = clarification_result.model_dump()
+    except Exception as e:
+        logger.warning(f"Clarification analysis failed (non-fatal): {e}")
+
     return {
         "session_id": session.session_id,
         "ticket_count": result.get("ticket_count", 0),
@@ -205,6 +249,7 @@ async def analyze_tickets(req: AnalyzeRequest):
         "epic_key": session.epic_key,
         "ticket_key": session.ticket_key,
         "analysis": result["analysis"],
+        "clarification_analysis": clarification_analysis,
         "rag_citations": result.get("rag_citations", []),
         "rag_used": bool(result.get("rag_citations")),
     }

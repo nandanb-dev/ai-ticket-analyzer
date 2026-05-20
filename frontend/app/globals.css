@@ -368,6 +368,40 @@ label span {
   top: 6px;
 }
 
+.msg-numbered-item {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  line-height: 1.55;
+  font-size: 0.95rem;
+}
+
+.msg-numbered-item .msg-number {
+  font-weight: 600;
+  color: var(--teal-deep);
+  min-width: 20px;
+}
+
+/* Inline markdown styles */
+.chat-message code {
+  background: rgba(10, 100, 96, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.88em;
+  color: var(--teal-deep);
+}
+
+.chat-message h2, .chat-message h3, .chat-message h4 {
+  margin: 12px 0 6px 0;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.chat-message h2 { font-size: 1.15rem; }
+.chat-message h3 { font-size: 1.05rem; }
+.chat-message h4 { font-size: 0.98rem; }
+
 .message-role {
   font-size: 0.68rem;
 }
@@ -1512,10 +1546,18 @@ textarea { resize: vertical; }
   min-height: 300px;
 }
 
-.draft-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+/* ── Clarification Card ─────────────────────────────────────────── */
+
+.clarification-card {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(11, 110, 105, 0.2);
+  border-radius: 16px;
+  padding: 20px;
+  margin: 12px 0;
+  animation: rise-in 300ms ease;
+}
+
+.clarification-header {
   margin-bottom: 16px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
@@ -1551,13 +1593,19 @@ textarea { resize: vertical; }
 /* Draft ticket cards */
 .draft-ticket-list {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: visible;
-  padding-right: 4px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--teal);
+  margin: 0 0 12px;
 }
 
-.draft-ticket-card {
+.question-item {
+  padding: 14px;
+  margin-bottom: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 12px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   background: rgba(255, 255, 255, 0.5);
@@ -1574,7 +1622,7 @@ textarea { resize: vertical; }
 .draft-ticket-card.story { border-left: 3px solid #1a5a9a; }
 .draft-ticket-card.task  { border-left: 3px solid #1a7040; }
 
-.draft-ticket-header {
+.question-number {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1585,13 +1633,15 @@ textarea { resize: vertical; }
 
 .draft-ticket-header:hover { background: rgba(255, 255, 255, 0.75); }
 
-.draft-ticket-type-badge {
-  padding: 2px 8px;
+.question-category {
+  padding: 3px 8px;
   border-radius: 4px;
   font-size: 0.63rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  background: rgba(11, 110, 105, 0.1);
+  color: var(--teal);
   flex-shrink: 0;
 }
 
@@ -1618,7 +1668,7 @@ textarea { resize: vertical; }
   font-weight: 400;
 }
 
-.draft-ticket-actions {
+.suggestion-chip {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1676,9 +1726,7 @@ textarea { resize: vertical; }
   margin-bottom: 4px;
 }
 
-.draft-field input,
-.draft-field textarea,
-.draft-field select {
+.custom-answer-input {
   width: 100%;
   padding: 7px 10px;
   border: 1.5px solid var(--line);
@@ -1691,9 +1739,7 @@ textarea { resize: vertical; }
   transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
-.draft-field input:focus,
-.draft-field textarea:focus,
-.draft-field select:focus {
+.custom-answer-input:focus {
   outline: none;
   border-color: rgba(10, 100, 96, 0.4);
   box-shadow: 0 0 0 3px rgba(10, 100, 96, 0.08);
@@ -1714,9 +1760,6 @@ textarea { resize: vertical; }
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .create-tickets-btn {
@@ -1774,11 +1817,34 @@ textarea { resize: vertical; }
   flex-shrink: 0;
 }
 
-.project-key-input-group {
-  flex: 1;
+.assumptions-preview li {
+  margin-bottom: 4px;
+}
+
+/* Clarification in Message Bubble */
+.message-card .clarification-card {
+  margin: 12px 0 0;
+}
+
+/* Text color utilities for score */
+.text-green-500 { color: #27ae60; }
+.text-yellow-500 { color: #e67e22; }
+.text-red-500 { color: #c0392b; }
+
+/* ── Inline Clarification (Chat Flow) ───────────────────────────── */
+
+.clarification-inline {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.clarification-score-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
 .project-key-input {
@@ -1807,10 +1873,57 @@ textarea { resize: vertical; }
   background: transparent;
 }
 
-.project-select-wrapper {
-  position: relative;
-  display: inline-block;
-  min-width: 200px;
+.score-badge[data-score="high"] {
+  background: rgba(39, 174, 96, 0.12);
+  color: #27ae60;
+}
+
+.score-badge[data-score="medium"] {
+  background: rgba(230, 126, 34, 0.12);
+  color: #d35400;
+}
+
+.score-badge[data-score="low"] {
+  background: rgba(192, 57, 43, 0.12);
+  color: #c0392b;
+}
+
+.can-proceed-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  background: rgba(52, 152, 219, 0.1);
+  color: #2980b9;
+}
+
+.clarification-summary {
+  font-size: 0.9rem;
+  color: var(--text-secondary, #555);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.clarification-gaps {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.gaps-label {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gaps-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .project-key-select {
@@ -1841,9 +1954,27 @@ textarea { resize: vertical; }
   color: var(--muted-light);
 }
 
-.project-key-hint {
+.gap-tag {
+  padding: 3px 8px;
+  border-radius: 4px;
   font-size: 0.7rem;
-  color: var(--muted-light);
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.gap-tag[data-severity="blocking"] {
+  background: rgba(192, 57, 43, 0.1);
+  color: #c0392b;
+}
+
+.gap-tag[data-severity="important"] {
+  background: rgba(230, 126, 34, 0.1);
+  color: #d35400;
+}
+
+.gap-tag[data-severity="nice_to_have"] {
+  background: rgba(149, 165, 166, 0.2);
+  color: #7f8c8d;
 }
 
 /* ── Editable AC ────────────────────────────────────────────────── */
@@ -1851,22 +1982,94 @@ textarea { resize: vertical; }
 .ac-list.editable {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 14px;
 }
 
-.ac-item.editable {
+.clarification-question {
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+  border-left: 3px solid var(--primary, #2c6e49);
+}
+
+.question-header {
   display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.question-number {
+  font-weight: 700;
+  color: var(--primary, #2c6e49);
+  font-size: 0.9rem;
+}
+
+.question-text {
+  font-size: 0.9rem;
+  color: var(--text-primary, #333);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.8);
+  margin-top: 8px;
+}
+
+.suggestion-chips .suggestion-chip {
+  padding: 6px 12px;
+  border: 1px solid rgba(44, 110, 73, 0.3);
+  background: rgba(44, 110, 73, 0.05);
+  color: var(--primary, #2c6e49);
+  border-radius: 16px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.suggestion-chips .suggestion-chip:hover {
+  background: var(--primary, #2c6e49);
+  color: white;
+  border-color: var(--primary, #2c6e49);
+}
+
+.followup-hint {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  font-style: italic;
+}
+
+.assumptions-section {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: rgba(52, 152, 219, 0.06);
   border-radius: 6px;
 }
 
-.ac-fields {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.assumptions-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #2980b9;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.assumptions-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #555);
+  line-height: 1.5;
+}
+
+.assumptions-list li {
+  margin-bottom: 4px;
 }
 
 .ac-input {

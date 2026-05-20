@@ -82,3 +82,5 @@ class Citation:
     source_url: Optional[str]
     excerpt: str                        # first ~200 chars of the chunk
     score: float
+    doc_type: Optional[str] = None
+    severity_level: Optional[str] = None

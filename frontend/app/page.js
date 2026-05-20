@@ -112,8 +112,19 @@ export default function HomePage() {
 
   const pendingTickets = useMemo(() => session?.pending_tickets || {}, [session]);
 
-  function pushChatMessage(role, content, id = null) {
-    setChatMessages((prev) => [...prev, { role, content, ...(id && { id }) }]);
+  function pushChatMessage(role, content, id = null, clarificationAnalysis = null) {
+    setChatMessages((prev) => [...prev, { role, content, ...(id && { id }), ...(clarificationAnalysis && { clarificationAnalysis }) }]);
+  }
+
+  function handleSuggestionClick(question, suggestion) {
+    // Fill textarea with the question and selected suggestion
+    const answerText = `${suggestion}`;
+    setMessage(answerText);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
   }
 
   function logRagDebug(stage, payload) {
@@ -184,10 +195,20 @@ export default function HomePage() {
       const tickets = a.tickets || [];
       const critical = tickets.flatMap((t) => t.issues_found || []).filter((i) => i.severity === "critical").length;
       const major = tickets.flatMap((t) => t.issues_found || []).filter((i) => i.severity === "major").length;
-      pushChatMessage(
-        "assistant",
-        `Analysis complete. ${ragCitations.length} source(s) retrieved from RAG.`
-      );
+      
+      // Build analysis summary message
+      let analysisMsg = `Analysis complete. ${ragCitations.length} source(s) retrieved from RAG.`;
+      
+      // Add clarification questions if present
+      if (data.clarification_analysis?.questions?.length > 0) {
+        analysisMsg += "\n\n**I have some clarifying questions about the ticket(s):**\n";
+        data.clarification_analysis.questions.forEach((q, i) => {
+          // q is an object with: question, category, suggestions, follow_up_hint
+          analysisMsg += `${i + 1}. ${q.question || q}\n`;
+        });
+      }
+      
+      pushChatMessage("assistant", analysisMsg);
       toast.success(`Analysis complete — score ${a.overall_score ?? "—"}/10 across ${data.ticket_count} ticket(s)`);
     } catch (e) {
       // Remove the temporary analyzing message on error too
@@ -492,13 +513,16 @@ export default function HomePage() {
     try {
       const intent = detectAnalyzeIntent(sentMessage);
 
-      if (analyzeSession) {
-        await handleFeedback(sentMessage);
+      // If user enters a NEW ticket/epic/project key, start fresh analysis
+      // (even if there's an existing analyzeSession)
+      if (intent) {
+        await handleAnalyze(sentMessage, intent);
         return;
       }
 
-      if (intent) {
-        await handleAnalyze(sentMessage, intent);
+      // If there's an existing analysis session and no new intent, treat as feedback
+      if (analyzeSession) {
+        await handleFeedback(sentMessage);
         return;
       }
 
@@ -528,6 +552,17 @@ export default function HomePage() {
       const data = await response.json();
       if (!response.ok) {
         throw new Error(typeof data.detail === "string" ? data.detail : "Failed to send message.");
+      }
+
+      // If clarification_analysis is present, attach it to the last assistant message
+      if (data.clarification_analysis && data.messages && data.messages.length > 0) {
+        const lastIdx = data.messages.length - 1;
+        if (data.messages[lastIdx].role === "assistant") {
+          data.messages[lastIdx] = {
+            ...data.messages[lastIdx],
+            clarificationAnalysis: data.clarification_analysis
+          };
+        }
       }
 
       setSession(data);
@@ -633,10 +668,22 @@ export default function HomePage() {
             {(session?.messages?.length || chatMessages.length || optimisticMessage) ? (
               <>
                 {session?.messages?.map((entry, index) => (
-                  <MessageBubble key={`session-${index}`} role={entry.role} content={entry.content} />
+                  <MessageBubble 
+                    key={`session-${index}`} 
+                    role={entry.role} 
+                    content={entry.content}
+                    clarificationAnalysis={entry.clarificationAnalysis}
+                    onSuggestionClick={handleSuggestionClick}
+                  />
                 ))}
                 {chatMessages.map((entry, index) => (
-                  <MessageBubble key={`chat-${index}`} role={entry.role} content={entry.content} />
+                  <MessageBubble 
+                    key={`chat-${index}`} 
+                    role={entry.role} 
+                    content={entry.content}
+                    clarificationAnalysis={entry.clarificationAnalysis}
+                    onSuggestionClick={handleSuggestionClick}
+                  />
                 ))}
                 {optimisticMessage && <MessageBubble role="user" content={optimisticMessage} />}
                 {isSending && (

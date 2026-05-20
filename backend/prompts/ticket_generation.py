@@ -55,18 +55,32 @@ Return a single JSON object — no markdown fences, no extra text — matching t
 }
 
 Rules:
-- Cover EVERY feature mentioned in the PRD — do not skip anything
+- If user specifies constraints (e.g., "one story"), follow those exactly - do not add extra tickets
+- If no constraints, cover EVERY feature mentioned in the PRD — do not skip anything
 - Each story must have ≥3 acceptance criteria (Given/When/Then) and ≥3 test cases (mix of positive, negative, edge)
 - Each task must have ≥2 acceptance criteria
 - Edge cases must be feature-specific — no generic placeholders
 - story_points must be Fibonacci: 1, 2, 3, 5, 8, 13, or 21
-- epic_index = 0-based index of the parent epic in the "epics" array
-- story_index = 0-based index of the parent story in the "stories" array
+- epic_index = 0-based index of the parent epic in the "epics" array (use -1 or omit if no epics)
+- story_index = 0-based index of the parent story in the "stories" array (use -1 or omit if no stories)
+- Return empty arrays [] for ticket types user didn't request
 """
 
 TICKET_GENERATION_PROMPT = ChatPromptTemplate.from_messages([
     SystemMessage(content=SYSTEM_PROMPT + "\n" + _SCHEMA),
     HumanMessagePromptTemplate.from_template(
-        "Analyze the following PRD and generate all JIRA tickets:\n\n{prd_content}"
+        """Analyze the following PRD/context and generate JIRA tickets.
+
+IMPORTANT - Respect user constraints:
+- If user asks for "one story" or "1 story" → generate exactly 1 story (no epics, no tasks)
+- If user asks for "only stories" → generate only stories (no epics, no tasks)
+- If user asks for "2 tasks" → generate exactly 2 tasks
+- If user asks for "epic and stories" → generate epic + stories (no tasks)
+- If user asks for "create tickets" or "generate tickets" (no quantity) → generate all (epics, stories, tasks)
+- Default when no constraint specified: generate appropriate epics, stories, AND tasks
+
+Parse the "Latest instruction" below for any quantity or type constraints.
+
+{prd_content}"""
     ),
 ])

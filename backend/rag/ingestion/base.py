@@ -141,6 +141,37 @@ def ingest_document(doc: DocumentRecord) -> dict:
     Returns:
         Summary dict: {document_id, chunk_count, embedded_count}
     """
+    # Debug visibility: print full metadata just before upsert.
+    metadata = doc.metadata or {}
+    logger.info(
+        "RAG metadata before upsert for %s/%s: %s",
+        doc.source_type,
+        doc.source_id,
+        json.dumps(metadata, ensure_ascii=False),
+    )
+
+    # Verify expected incident/rca metadata shape before persistence.
+    doc_type = metadata.get("doc_type")
+    severity_level = metadata.get("severity_level")
+    if not doc_type:
+        logger.warning("Missing doc_type before upsert for %s/%s", doc.source_type, doc.source_id)
+    if doc_type in {"incident", "rca"} and severity_level != "p1_p2":
+        logger.warning(
+            "Unexpected severity_level for %s/%s: doc_type=%s severity_level=%s (expected p1_p2)",
+            doc.source_type,
+            doc.source_id,
+            doc_type,
+            severity_level,
+        )
+    if doc_type not in {"incident", "rca"} and severity_level is not None:
+        logger.warning(
+            "Unexpected severity_level for non-incident doc %s/%s: doc_type=%s severity_level=%s (expected null)",
+            doc.source_type,
+            doc.source_id,
+            doc_type,
+            severity_level,
+        )
+
     # Step 1: Upsert document
     document_id = upsert_document(doc)
     doc.id = document_id
