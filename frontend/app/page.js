@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
-import { Paperclip, FileText, X, Send, Search, Square, Trash2 } from "lucide-react";
+import { Paperclip, FileText, X, Send, Search, Square, Trash2, Upload, Ticket, BookOpen } from "lucide-react";
 import { detectAnalyzeIntent } from "./utils";
 import { ANALYZE_INTENT_RE } from "./constants";
 import API_BASE_URL from "./config";
@@ -994,58 +994,28 @@ export default function HomePage() {
               <div style={{ marginBottom: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
                 <button
                   type="button"
-                  className="icon-btn"
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    fontSize: "0.9rem",
-                    border: "1px dashed var(--border-subtle)",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                    backgroundColor: "rgba(58, 134, 255, 0.05)",
-                    color: "var(--text-primary)",
-                    transition: "all 0.2s",
-                  }}
+                  className="rag-action-btn"
                   onClick={() => ragFileInputRef.current?.click()}
                   disabled={isUploadingToRag}
                 >
-                  {isUploadingToRag ? "Uploading..." : "📄 Add documents to RAG"}
+                  <Upload size={16} />
+                  <span>{isUploadingToRag ? "Uploading..." : "Add documents"}</span>
                 </button>
                 <button
                   type="button"
-                  className="icon-btn"
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    fontSize: "0.9rem",
-                    border: "1px dashed var(--border-subtle)",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                    backgroundColor: "rgba(58, 134, 255, 0.05)",
-                    color: "var(--text-primary)",
-                    transition: "all 0.2s",
-                  }}
+                  className="rag-action-btn"
                   onClick={() => setShowJiraModal(true)}
                 >
-                  🎫 Add Jira tickets to RAG
+                  <Ticket size={16} />
+                  <span>Add Jira tickets</span>
                 </button>
                 <button
                   type="button"
-                  className="icon-btn"
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    fontSize: "0.9rem",
-                    border: "1px dashed var(--border-subtle)",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                    backgroundColor: "rgba(58, 134, 255, 0.05)",
-                    color: "var(--text-primary)",
-                    transition: "all 0.2s",
-                  }}
+                  className="rag-action-btn"
                   onClick={() => setShowConfluenceModal(true)}
                 >
-                  📋 Add Confluence pages to RAG
+                  <BookOpen size={16} />
+                  <span>Add Confluence pages</span>
                 </button>
                 <input
                   ref={ragFileInputRef}

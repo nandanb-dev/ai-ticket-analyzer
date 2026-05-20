@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, Ticket, Layers, FileText } from "lucide-react";
 
 export default function JiraIngestionModal({ isOpen, onClose, onSubmit }) {
   const [ingestionType, setIngestionType] = useState("project");
@@ -52,42 +52,57 @@ export default function JiraIngestionModal({ isOpen, onClose, onSubmit }) {
             </p>
 
             <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", marginBottom: "8px", fontWeight: "500" }}>
+              <label style={{ display: "block", marginBottom: "12px", fontWeight: "500", fontSize: "0.9rem" }}>
                 Ingestion Type
               </label>
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+              <div className="radio-group">
+                <label className={`radio-option ${ingestionType === "project" ? "selected" : ""}`}>
                   <input
                     type="radio"
                     name="ingestionType"
                     value="project"
                     checked={ingestionType === "project"}
                     onChange={(e) => setIngestionType(e.target.value)}
-                    style={{ marginRight: "8px" }}
                   />
-                  <span>Project - Ingest all tickets in a project</span>
+                  <div className="radio-content">
+                    <Layers size={18} />
+                    <div className="radio-text">
+                      <strong>Project</strong>
+                      <span>Ingest all tickets in a project</span>
+                    </div>
+                  </div>
                 </label>
-                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                <label className={`radio-option ${ingestionType === "epic" ? "selected" : ""}`}>
                   <input
                     type="radio"
                     name="ingestionType"
                     value="epic"
                     checked={ingestionType === "epic"}
                     onChange={(e) => setIngestionType(e.target.value)}
-                    style={{ marginRight: "8px" }}
                   />
-                  <span>Epic - Ingest an epic and its child tickets</span>
+                  <div className="radio-content">
+                    <Ticket size={18} />
+                    <div className="radio-text">
+                      <strong>Epic</strong>
+                      <span>Ingest an epic and its child tickets</span>
+                    </div>
+                  </div>
                 </label>
-                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                <label className={`radio-option ${ingestionType === "ticket" ? "selected" : ""}`}>
                   <input
                     type="radio"
                     name="ingestionType"
                     value="ticket"
                     checked={ingestionType === "ticket"}
                     onChange={(e) => setIngestionType(e.target.value)}
-                    style={{ marginRight: "8px" }}
                   />
-                  <span>Single Ticket - Ingest one specific ticket</span>
+                  <div className="radio-content">
+                    <FileText size={18} />
+                    <div className="radio-text">
+                      <strong>Single Ticket</strong>
+                      <span>Ingest one specific ticket</span>
+                    </div>
+                  </div>
                 </label>
               </div>
             </div>

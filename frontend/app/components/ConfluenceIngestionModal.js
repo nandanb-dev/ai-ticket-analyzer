@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, FileText, FolderOpen, BookOpen } from "lucide-react";
 
 export default function ConfluenceIngestionModal({ isOpen, onClose, onSubmit }) {
   const [ingestionType, setIngestionType] = useState("page");
@@ -63,42 +63,57 @@ export default function ConfluenceIngestionModal({ isOpen, onClose, onSubmit }) 
             </p>
 
             <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", marginBottom: "8px", fontWeight: "500" }}>
+              <label style={{ display: "block", marginBottom: "12px", fontWeight: "500", fontSize: "0.9rem" }}>
                 Ingestion Type
               </label>
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+              <div className="radio-group">
+                <label className={`radio-option ${ingestionType === "page" ? "selected" : ""}`}>
                   <input
                     type="radio"
                     name="confluenceType"
                     value="page"
                     checked={ingestionType === "page"}
                     onChange={(e) => setIngestionType(e.target.value)}
-                    style={{ marginRight: "8px" }}
                   />
-                  <span>Single Page - Ingest by page ID</span>
+                  <div className="radio-content">
+                    <FileText size={18} />
+                    <div className="radio-text">
+                      <strong>Single Page</strong>
+                      <span>Ingest by page ID</span>
+                    </div>
+                  </div>
                 </label>
-                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                <label className={`radio-option ${ingestionType === "space" ? "selected" : ""}`}>
                   <input
                     type="radio"
                     name="confluenceType"
                     value="space"
                     checked={ingestionType === "space"}
                     onChange={(e) => setIngestionType(e.target.value)}
-                    style={{ marginRight: "8px" }}
                   />
-                  <span>Entire Space - Ingest multiple pages from a space</span>
+                  <div className="radio-content">
+                    <FolderOpen size={18} />
+                    <div className="radio-text">
+                      <strong>Entire Space</strong>
+                      <span>Ingest multiple pages from a space</span>
+                    </div>
+                  </div>
                 </label>
-                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                <label className={`radio-option ${ingestionType === "space-page" ? "selected" : ""}`}>
                   <input
                     type="radio"
                     name="confluenceType"
                     value="space-page"
                     checked={ingestionType === "space-page"}
                     onChange={(e) => setIngestionType(e.target.value)}
-                    style={{ marginRight: "8px" }}
                   />
-                  <span>Page by Title - Ingest specific page from a space</span>
+                  <div className="radio-content">
+                    <BookOpen size={18} />
+                    <div className="radio-text">
+                      <strong>Page by Title</strong>
+                      <span>Ingest specific page from a space</span>
+                    </div>
+                  </div>
                 </label>
               </div>
             </div>
