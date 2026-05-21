@@ -146,7 +146,7 @@ def clarify_requirements_node(state: ChatState) -> dict[str, Any]:
             other = [q for q in analysis.questions if q.category not in blocking_categories and q.category not in important_categories]
 
             question_num = 1
-            for q in (blocking + important + other)[:5]:  # Limit to 5 questions
+            for q in (blocking + important + other)[:10]:  # Limit to 10 questions
                 reply_parts.append(f"\n**{question_num}. {q.question}**")
                 if q.suggestions:
                     reply_parts.append("   _Suggestions:_")
