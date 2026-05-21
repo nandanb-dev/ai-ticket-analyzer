@@ -9,7 +9,7 @@ from prompts.system import SYSTEM_PROMPT
 from prompts.ticket_generation import TICKET_GENERATION_PROMPT
 from prompts.clarification import CLARIFICATION_SYSTEM_PROMPT, DECISION_SYSTEM_PROMPT
 
-from agents.chat.models import IntentDecision, ClarificationAnalysis
+from agents.chat.models import IntentDecision, ClarificationAnalysis, EditDraftRequest
 
 
 _base_llm = None
@@ -17,6 +17,7 @@ _decision_chain = None
 _response_chain = None
 _ticket_chain = None
 _clarification_chain = None
+_edit_draft_chain = None
 
 
 def get_llm() -> ChatGroq: #ChatGoogleGenerativeAI, ChatOpenAI, ChatGroq
@@ -114,3 +115,43 @@ def get_clarification_chain():
     ])
     _clarification_chain = prompt | get_llm().with_structured_output(ClarificationAnalysis)
     return _clarification_chain
+
+
+def get_edit_draft_chain():
+    """Chain for parsing user's edit request for draft tickets"""
+    global _edit_draft_chain
+    if _edit_draft_chain is not None:
+        return _edit_draft_chain
+
+    prompt = ChatPromptTemplate.from_messages([
+        (
+            "system",
+            """You parse user requests to edit draft tickets.
+
+The user has pending draft tickets and wants to modify one of them.
+Extract the following from their request:
+- ticket_type: "epic", "story", or "task"
+- ticket_index: 0-based index (first=0, second=1, etc.)
+- field: "summary", "description", "priority", "story_points", "labels", or "acceptance_criteria"
+- action: "set" (replace value), "append" (add to existing), or "remove" (delete/clear)
+- value: the new content to apply
+- explanation: brief description of the change
+
+Examples:
+- "change priority of the first story to High" → story, 0, priority, set, "High"
+- "add OAuth with Google to ticket 1's description" → story, 0, description, append, "OAuth with Google"
+- "update acceptance criteria for story 2: user can login" → story, 1, acceptance_criteria, set, "user can login"
+- "remove the second task" → task, 1, summary, remove, ""
+
+If user says "ticket 1" or "first ticket", assume it's a story (most common).
+If user says "the story" or "the task", use index 0 (first one)."""
+        ),
+        (
+            "human",
+            "Current pending tickets:\n{pending_tickets_summary}\n\n"
+            "User request:\n{latest_user_message}\n\n"
+            "Parse this edit request."
+        ),
+    ])
+    _edit_draft_chain = prompt | get_llm().with_structured_output(EditDraftRequest)
+    return _edit_draft_chain

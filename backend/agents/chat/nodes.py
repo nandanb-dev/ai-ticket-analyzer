@@ -2,7 +2,7 @@ from typing import Any
 
 from services.jira import push_tickets
 
-from agents.chat.chains import get_decision_chain, get_response_chain, get_ticket_chain, get_clarification_chain
+from agents.chat.chains import get_decision_chain, get_response_chain, get_ticket_chain, get_clarification_chain, get_edit_draft_chain
 from agents.chat.models import ChatState
 from agents.chat.utils import (
     build_generation_context,
@@ -11,6 +11,7 @@ from agents.chat.utils import (
     format_rag_context,
     retrieve_rag_context,
     summarize_ticket_preview,
+    summarize_pending_tickets,
 )
 
 
@@ -179,6 +180,81 @@ def clarify_requirements_node(state: ChatState) -> dict[str, Any]:
         return result
     except Exception as exc:
         return {"error": f"Clarification analysis failed: {exc}"}
+
+
+def edit_draft_node(state: ChatState) -> dict[str, Any]:
+    """Parse and apply user's edit request to pending draft tickets"""
+    try:
+        pending = state.get("pending_tickets")
+        if not pending:
+            return {"reply": "There are no draft tickets to edit. First, ask me to generate tickets."}
+
+        # Build summary of pending tickets for the LLM
+        pending_summary = summarize_pending_tickets(pending)
+
+        # Parse the edit request using LLM
+        edit_request = get_edit_draft_chain().invoke({
+            "pending_tickets_summary": pending_summary,
+            "latest_user_message": state["latest_user_message"],
+        })
+
+        ticket_type = edit_request.ticket_type
+        ticket_index = edit_request.ticket_index
+        field = edit_request.field
+        action = edit_request.action
+        value = edit_request.value
+
+        # Validate ticket type exists
+        ticket_list = pending.get(f"{ticket_type}s", [])  # epics, stories, tasks
+        if not ticket_list:
+            return {"reply": f"No {ticket_type}s found in pending tickets. Available types: {', '.join(k for k in pending.keys() if pending[k])}"}
+
+        # Validate index
+        if ticket_index < 0 or ticket_index >= len(ticket_list):
+            return {"reply": f"Invalid {ticket_type} index. You have {len(ticket_list)} {ticket_type}(s) (use 1-{len(ticket_list)})."}
+
+        # Get the ticket to edit
+        ticket = ticket_list[ticket_index]
+
+        # Apply the edit
+        if action == "remove" and field == "summary":
+            # Remove entire ticket
+            ticket_list.pop(ticket_index)
+            reply = f"Removed {ticket_type} #{ticket_index + 1}: \"{ticket.get('summary', 'Unknown')}\""
+        elif action == "set":
+            old_value = ticket.get(field, "")
+            ticket[field] = value
+            reply = f"Updated {ticket_type} #{ticket_index + 1}'s **{field}** from \"{old_value}\" to \"{value}\""
+        elif action == "append":
+            old_value = ticket.get(field, "")
+            if isinstance(old_value, list):
+                ticket[field].append(value)
+            else:
+                ticket[field] = f"{old_value}\n{value}" if old_value else value
+            reply = f"Appended to {ticket_type} #{ticket_index + 1}'s **{field}**: \"{value}\""
+        elif action == "remove":
+            if isinstance(ticket.get(field), list):
+                # Try to remove matching item from list
+                if value in ticket[field]:
+                    ticket[field].remove(value)
+                    reply = f"Removed \"{value}\" from {ticket_type} #{ticket_index + 1}'s **{field}**"
+                else:
+                    reply = f"Value \"{value}\" not found in {ticket_type} #{ticket_index + 1}'s **{field}**"
+            else:
+                ticket[field] = ""
+                reply = f"Cleared {ticket_type} #{ticket_index + 1}'s **{field}**"
+        else:
+            return {"reply": f"Unknown action: {action}. Use 'set', 'append', or 'remove'."}
+
+        # Build updated preview
+        updated_preview = summarize_ticket_preview(pending)
+        
+        return {
+            "pending_tickets": pending,  # Return updated tickets
+            "reply": f"{reply}\n\n**Updated ticket preview:**\n{updated_preview}\n\n_Say 'confirm' to create in Jira, or request more edits._",
+        }
+    except Exception as exc:
+        return {"error": f"Edit draft failed: {exc}"}
 
 
 def route_after_decision(state: ChatState) -> str:
