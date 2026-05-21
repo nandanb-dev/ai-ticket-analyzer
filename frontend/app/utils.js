@@ -1,6 +1,19 @@
 import { JIRA_URL_RE, EPIC_KEYWORD_RE, PROJECT_KEY_RE, TICKET_KEY_RE } from "./constants";
 
 function detectAnalyzeIntent(text) {
+  const lowerText = text.toLowerCase();
+  
+  // If user wants to CREATE a ticket, don't route to analyze
+  // Even if the message contains a ticket key pattern (e.g., in JSON)
+  if (/^(create|generate|make|draft|build|add)\s+(a\s+)?(ticket|story|task|epic|issue)/i.test(text)) {
+    return null;
+  }
+  
+  // If text contains JSON-like structure with "key", it's likely a create request
+  if (text.includes('"key"') || text.includes('"issue_type"') || text.includes('"summary"')) {
+    return null;
+  }
+
   const urlMatch = text.match(JIRA_URL_RE);
   if (urlMatch) return { ticket_key: urlMatch[1], context: text.replace(JIRA_URL_RE, "").trim() };
 
@@ -65,7 +78,56 @@ function renderContent(content) {
   });
 }
 
-export { detectAnalyzeIntent, renderContent };
+/**
+ * Detect if a message looks like feedback for an analysis.
+ * Returns true if the message should be treated as analysis feedback.
+ */
+function detectAnalysisFeedback(text) {
+  const lowerText = text.toLowerCase().trim();
+  
+  // FIRST: Check if this is a NEW create request (not feedback)
+  // "create ticket for X" or "create a story" etc. should NOT be feedback
+  if (/^(create|generate|make|draft|build|add)\s+(a\s+)?(new\s+)?(ticket|story|task|epic|issue|bug)/i.test(text)) {
+    return false;
+  }
+  
+  // Feedback keywords that indicate the user is responding to analysis
+  const feedbackPatterns = [
+    // Explicit feedback/revision requests
+    /\b(change|update|revise|modify|fix|correct|adjust|edit)\b.*\b(score|severity|priority|description|summary|analysis|ticket|issue)/i,
+    /\b(score|severity|priority|description|summary)\b.*\b(should be|is wrong|incorrect|too high|too low)/i,
+    // Agreement/approval
+    /^(yes|no|ok|okay|correct|right|wrong|agree|disagree|approved?|reject|looks good|lgtm|ship it)\b/i,
+    // References to the analysis
+    /\b(the analysis|your analysis|this analysis|the score|the severity|the suggestion|the recommendation)\b/i,
+    // Explicit feedback markers
+    /^(feedback|comment|suggestion|note|correction|change request):/i,
+    // Apply/confirm actions - but NOT "create ticket" (that's a new request)
+    /\b(apply|confirm|push|submit)\b.*\b(changes?|updates?|to jira)/i,
+    /\b(create|push)\b.*\b(in jira|to jira)\b/i,
+    // Short affirmations (less than 15 chars and common responses)
+    /^(yes|no|ok|okay|sure|fine|good|great|thanks|done|next)\.?$/i,
+  ];
+  
+  for (const pattern of feedbackPatterns) {
+    if (pattern.test(lowerText)) {
+      return true;
+    }
+  }
+  
+  // If the message is very short (under 30 chars) and doesn't look like a question or new topic,
+  // it's more likely to be feedback
+  if (lowerText.length < 30 && !lowerText.includes("?") && !lowerText.startsWith("i want") && !lowerText.startsWith("create") && !lowerText.startsWith("build")) {
+    // Check if it contains any ticket-related words
+    if (/\b(ticket|story|epic|task|bug|issue|priority|severity|score)\b/i.test(lowerText)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+export { detectAnalyzeIntent, renderContent, detectAnalysisFeedback };
 
 export function normalizeRagCitations(payload) {
   const raw =

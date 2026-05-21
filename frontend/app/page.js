@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { Paperclip, FileText, X, Send, Search, Square, Trash2, Upload, Ticket, BookOpen } from "lucide-react";
-import { detectAnalyzeIntent } from "./utils";
+import { detectAnalyzeIntent, detectAnalysisFeedback } from "./utils";
 import { ANALYZE_INTENT_RE } from "./constants";
 import API_BASE_URL from "./config";
 import MessageBubble from "./components/MessageBubble";
@@ -110,10 +110,51 @@ export default function HomePage() {
     loadRagDocuments();
   }, []);
 
+  // Sync session.messages into chatMessages to maintain single source of truth
+  // This ensures proper ordering when mixing analyze flow and chat flow
+  const prevSessionMsgsRef = useRef([]);
+  useEffect(() => {
+    const sessionMsgs = session?.messages || [];
+    const prevMsgs = prevSessionMsgsRef.current;
+    
+    // Find new messages from session that aren't in chatMessages
+    if (sessionMsgs.length > prevMsgs.length) {
+      const newMsgs = sessionMsgs.slice(prevMsgs.length);
+      setChatMessages(prev => {
+        // Add new messages with timestamps
+        const msgsWithTs = newMsgs.map(msg => ({
+          ...msg,
+          _ts: Date.now()
+        }));
+        return [...prev, ...msgsWithTs];
+      });
+    }
+    
+    prevSessionMsgsRef.current = sessionMsgs;
+  }, [session?.messages]);
+
   const pendingTickets = useMemo(() => session?.pending_tickets || {}, [session]);
 
+  // Use chatMessages as single source of truth (now includes synced session messages)
+  const allMessages = useMemo(() => {
+    // Deduplicate by content (in case of any overlap)
+    const seen = new Set();
+    return chatMessages.filter(msg => {
+      const key = `${msg.role}:${msg.content?.slice(0, 100)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [chatMessages]);
+
   function pushChatMessage(role, content, id = null, clarificationAnalysis = null) {
-    setChatMessages((prev) => [...prev, { role, content, ...(id && { id }), ...(clarificationAnalysis && { clarificationAnalysis }) }]);
+    setChatMessages((prev) => [...prev, { 
+      role, 
+      content, 
+      _ts: Date.now(),
+      ...(id && { id }), 
+      ...(clarificationAnalysis && { clarificationAnalysis }) 
+    }]);
   }
 
   function handleSuggestionClick(question, suggestion) {
@@ -199,13 +240,27 @@ export default function HomePage() {
       // Build analysis summary message
       let analysisMsg = `Analysis complete. ${ragCitations.length} source(s) retrieved from RAG.`;
       
-      // Add clarification questions if present
-      if (data.clarification_analysis?.questions?.length > 0) {
-        analysisMsg += "\n\n**I have some clarifying questions about the ticket(s):**\n";
-        data.clarification_analysis.questions.forEach((q, i) => {
-          // q is an object with: question, category, suggestions, follow_up_hint
-          analysisMsg += `${i + 1}. ${q.question || q}\n`;
-        });
+      // Add readiness score and clarification questions if present
+      if (data.clarification_analysis) {
+        const readiness = data.clarification_analysis.readiness_score;
+        if (readiness !== undefined) {
+          analysisMsg += `\n\n**Development Readiness: ${readiness}/10**`;
+        }
+        
+        if (data.clarification_analysis.questions?.length > 0) {
+          // Show questions regardless of readiness score
+          const questionIntro = readiness >= 8 
+            ? "\n\nThe requirements look solid, but here are a few optional clarifications:"
+            : "\n\nI have some clarifying questions about the ticket(s):";
+          analysisMsg += questionIntro + "\n";
+          data.clarification_analysis.questions.forEach((q, i) => {
+            // q is an object with: question, category, suggestions, follow_up_hint
+            analysisMsg += `${i + 1}. ${q.question || q}\n`;
+          });
+        } else {
+          // No questions at all
+          analysisMsg += "\n\nNo clarification needed - ready for development.";
+        }
       }
       
       pushChatMessage("assistant", analysisMsg);
@@ -520,8 +575,14 @@ export default function HomePage() {
         return;
       }
 
-      // If there's an existing analysis session and no new intent, treat as feedback
-      if (analyzeSession) {
+      // Only route to analysis feedback for EXPLICIT analysis-specific feedback
+      // Let the backend LLM decide everything else based on context
+      const isExplicitAnalysisFeedback = analyzeSession && (
+        /\b(the analysis|your analysis|this analysis|analysis score)\b/i.test(sentMessage) ||
+        /\b(revise|refine|update)\s+(the\s+)?analysis\b/i.test(sentMessage)
+      );
+      
+      if (isExplicitAnalysisFeedback) {
         await handleFeedback(sentMessage);
         return;
       }
@@ -667,18 +728,9 @@ export default function HomePage() {
           <div className="message-stream">
             {(session?.messages?.length || chatMessages.length || optimisticMessage) ? (
               <>
-                {session?.messages?.map((entry, index) => (
+                {allMessages.map((entry, index) => (
                   <MessageBubble 
-                    key={`session-${index}`} 
-                    role={entry.role} 
-                    content={entry.content}
-                    clarificationAnalysis={entry.clarificationAnalysis}
-                    onSuggestionClick={handleSuggestionClick}
-                  />
-                ))}
-                {chatMessages.map((entry, index) => (
-                  <MessageBubble 
-                    key={`chat-${index}`} 
+                    key={`msg-${index}`} 
                     role={entry.role} 
                     content={entry.content}
                     clarificationAnalysis={entry.clarificationAnalysis}
