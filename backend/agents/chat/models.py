@@ -43,6 +43,8 @@ class ClarificationAnalysis(BaseModel):
         description="Whether clarification is required before proceeding"
     )
     readiness_score: int = Field(
+        ge=1,
+        le=10,
         description="1-10 score of how ready this is for development (10=ready)"
     )
     summary: str = Field(description="Brief summary of the clarification needs")

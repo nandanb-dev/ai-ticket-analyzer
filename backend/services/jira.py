@@ -217,6 +217,18 @@ def _map_issue_type(desired_type: str, available_types: list[str]) -> str:
     return desired_type
 
 
+def _resolve_parent_key(keys: list[str], raw_index: object) -> Optional[str]:
+    """Safely resolve a parent key from a possibly invalid index value."""
+    try:
+        idx = int(raw_index)
+    except (TypeError, ValueError):
+        return None
+
+    if idx < 0 or idx >= len(keys):
+        return None
+    return keys[idx]
+
+
 def push_tickets(project_key: str, ticket_data: dict) -> dict:
     epics   = ticket_data.get("epics", [])
     stories = ticket_data.get("stories", [])
@@ -232,55 +244,62 @@ def push_tickets(project_key: str, ticket_data: dict) -> dict:
     story_type = _map_issue_type("Story", available_types)
     task_type = _map_issue_type("Task", available_types)
 
-    # Epics — created first so stories can link to them
-    epic_keys = []
-    for epic in epics:
-        result = create_issue(
-            project_key=project_key,
-            issue_type=epic_type,
-            summary=epic["summary"],
-            description=epic["description"],
-            priority=epic.get("priority", "Medium"),
-            labels=epic.get("labels", []),
-        )
-        epic_keys.append(result["key"])
-        created["epics"].append({"key": result["key"], "summary": epic["summary"]})
+    try:
+        # Epics — created first so stories can link to them
+        epic_keys = []
+        for epic in epics:
+            result = create_issue(
+                project_key=project_key,
+                issue_type=epic_type,
+                summary=epic["summary"],
+                description=epic["description"],
+                priority=epic.get("priority", "Medium"),
+                labels=epic.get("labels", []),
+            )
+            epic_keys.append(result["key"])
+            created["epics"].append({"key": result["key"], "summary": epic["summary"]})
 
-    # Stories — linked to their parent epic via epic_index
-    story_keys = []
-    for story in stories:
-        description = _build_story_description(story)
-        epic_idx = story.get("epic_index", 0)
-        parent_key = epic_keys[epic_idx] if epic_idx < len(epic_keys) else None
+        # Stories — linked to their parent epic via epic_index
+        story_keys = []
+        for story in stories:
+            description = _build_story_description(story)
+            parent_key = _resolve_parent_key(epic_keys, story.get("epic_index", 0))
 
-        result = create_issue(
-            project_key=project_key,
-            issue_type=story_type,
-            summary=story["summary"],
-            description=description,
-            priority=story.get("priority", "Medium"),
-            labels=story.get("labels", []),
-            parent_key=parent_key,
-        )
-        story_keys.append(result["key"])
-        created["stories"].append({"key": result["key"], "summary": story["summary"]})
+            result = create_issue(
+                project_key=project_key,
+                issue_type=story_type,
+                summary=story["summary"],
+                description=description,
+                priority=story.get("priority", "Medium"),
+                labels=story.get("labels", []),
+                parent_key=parent_key,
+            )
+            story_keys.append(result["key"])
+            created["stories"].append({"key": result["key"], "summary": story["summary"]})
 
-    # Tasks — linked to their parent story via story_index
-    for task in tasks:
-        description = _build_task_description(task)
-        story_idx = task.get("story_index", 0)
-        parent_key = story_keys[story_idx] if story_idx < len(story_keys) else None
+        # Tasks — linked to their parent story via story_index
+        for task in tasks:
+            description = _build_task_description(task)
+            parent_key = _resolve_parent_key(story_keys, task.get("story_index", 0))
 
-        result = create_issue(
-            project_key=project_key,
-            issue_type=task_type,
-            summary=task["summary"],
-            description=description,
-            priority=task.get("priority", "Medium"),
-            labels=task.get("labels", []),
-            parent_key=parent_key,
-        )
-        created["tasks"].append({"key": result["key"], "summary": task["summary"]})
+            result = create_issue(
+                project_key=project_key,
+                issue_type=task_type,
+                summary=task["summary"],
+                description=description,
+                priority=task.get("priority", "Medium"),
+                labels=task.get("labels", []),
+                parent_key=parent_key,
+            )
+            created["tasks"].append({"key": result["key"], "summary": task["summary"]})
+    except IndexError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid ticket parent index in draft data. "
+                f"epics={len(epics)}, stories={len(stories)}, tasks={len(tasks)}"
+            ),
+        ) from exc
 
     return created
 

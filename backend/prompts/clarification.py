@@ -68,6 +68,13 @@ For each gap found:
 - Provide 2-4 intelligent suggestions the user can choose from (use knowledge base insights when available)
 - Hint at logical follow-up questions
 
+SCORING RUBRIC (readiness_score):
+- Never output 0. Use only 1-10.
+- 1-2: Nearly empty or extremely vague requirements.
+- 3-4: Basic intent present but major implementation blockers remain.
+- 5-7: Structured requirements with some important gaps.
+- 8-10: Development-ready with only minor assumptions.
+
 Generate at most 10 questions. Prioritize blocking issues first. Be conversational but efficient."""
 
 

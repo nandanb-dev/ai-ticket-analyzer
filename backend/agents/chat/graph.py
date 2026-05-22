@@ -86,6 +86,7 @@ def run_chat_agent(
         "assistant_message": final_state.get("reply") or "",
         "decision": final_state.get("decision") or {"action": "respond", "reason": "No decision returned."},
         "generated_tickets": final_state.get("generated_tickets"),
+        "pending_tickets": final_state.get("pending_tickets"),
         "created": final_state.get("created"),
         "clarification_analysis": final_state.get("clarification_analysis"),
     }

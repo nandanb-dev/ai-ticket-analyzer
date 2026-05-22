@@ -383,6 +383,7 @@ def _build_analysis_result(state: AnalyzerState) -> dict:
                 else f"epic:{state['epic_key']}" if state.get("epic_key")
                 else f"project:{state['project_key']}"
             ),
+            "raw_tickets": state.get("raw_tickets") or [],
             "rag_citations": state.get("rag_citations") or [],
         }
     }

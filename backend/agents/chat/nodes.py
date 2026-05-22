@@ -116,6 +116,29 @@ def clarify_requirements_node(state: ChatState) -> dict[str, Any]:
             "latest_user_message": state["latest_user_message"],
         })
 
+        # Guardrail: avoid unrealistically low readiness on well-structured requirement text.
+        source_text = "\n".join(
+            [
+                state.get("latest_user_message", "") or "",
+                state.get("context_text", "") or "",
+            ]
+        ).lower()
+        structure_markers = [
+            "implementation details",
+            "acceptance criteria",
+            "test cases",
+            "edge cases",
+        ]
+        has_sections = sum(1 for marker in structure_markers if marker in source_text) >= 2
+        has_bdd = all(token in source_text for token in ["given", "when", "then"])
+
+        if analysis.readiness_score <= 2 and (has_sections or has_bdd):
+            analysis.readiness_score = 6
+            analysis.summary = (
+                "The requirements include strong baseline structure (implementation details, acceptance criteria, "
+                "and validation scenarios). Some clarifications may still be needed, but this is not near-zero readiness."
+            )
+
         # Build conversational response with questions
         reply_parts = []
 
@@ -189,6 +212,84 @@ def edit_draft_node(state: ChatState) -> dict[str, Any]:
         if not pending:
             return {"reply": "There are no draft tickets to edit. First, ask me to generate tickets."}
 
+        user_message = (state.get("latest_user_message") or "").lower()
+        single_story_markers = [
+            "single story",
+            "one story",
+            "1 story",
+            "only story",
+            "just one story",
+            "just a story",
+        ]
+        wants_single_story = (
+            any(marker in user_message for marker in single_story_markers)
+            and ("task" in user_message or "story" in user_message or "convert" in user_message or "merge" in user_message)
+        )
+
+        if wants_single_story:
+            stories = pending.get("stories", []) or []
+            tasks = pending.get("tasks", []) or []
+
+            if not stories and not tasks:
+                return {"reply": "I could not find stories or tasks to consolidate into a single story."}
+
+            if not stories and tasks:
+                first_task = tasks[0]
+                stories = [{
+                    "summary": first_task.get("summary", "Consolidated Story"),
+                    "description": first_task.get("description", ""),
+                    "priority": first_task.get("priority", "Medium"),
+                    "story_points": first_task.get("story_points"),
+                    "labels": first_task.get("labels", []),
+                    "acceptance_criteria": first_task.get("acceptance_criteria", []),
+                }]
+                tasks = tasks[1:]
+
+            base_story = stories[0]
+
+            if len(stories) > 1:
+                extra_story_summaries = [s.get("summary", "Untitled story") for s in stories[1:]]
+                if extra_story_summaries:
+                    extra_line = "Additional story scope consolidated: " + ", ".join(extra_story_summaries)
+                    existing_desc = base_story.get("description", "")
+                    base_story["description"] = f"{existing_desc}\n\n{extra_line}" if existing_desc else extra_line
+
+            if tasks:
+                task_lines = []
+                for task in tasks:
+                    task_summary = task.get("summary", "Untitled task")
+                    task_desc = task.get("description", "")
+                    if task_desc:
+                        task_lines.append(f"- {task_summary}: {task_desc}")
+                    else:
+                        task_lines.append(f"- {task_summary}")
+
+                if task_lines:
+                    consolidation_block = "Implementation details consolidated from tasks:\n" + "\n".join(task_lines)
+                    existing_desc = base_story.get("description", "")
+                    base_story["description"] = f"{existing_desc}\n\n{consolidation_block}" if existing_desc else consolidation_block
+
+            base_labels = base_story.get("labels", []) or []
+            for source_ticket in (stories[1:] + tasks):
+                for label in (source_ticket.get("labels", []) or []):
+                    if label not in base_labels:
+                        base_labels.append(label)
+            base_story["labels"] = base_labels
+
+            pending["epics"] = []
+            pending["stories"] = [base_story]
+            pending["tasks"] = []
+
+            updated_preview = summarize_ticket_preview(pending)
+            return {
+                "pending_tickets": pending,
+                "reply": (
+                    "Consolidated the draft into a single story format by merging story/task details into one story.\n\n"
+                    f"**Updated ticket preview:**\n{updated_preview}\n\n"
+                    "_Say 'confirm' to create in Jira, or request more edits._"
+                ),
+            }
+
         # Build summary of pending tickets for the LLM
         pending_summary = summarize_pending_tickets(pending)
 
@@ -204,10 +305,17 @@ def edit_draft_node(state: ChatState) -> dict[str, Any]:
         action = edit_request.action
         value = edit_request.value
 
+        # Handle irregular pluralization (story -> stories).
+        plural_key = {
+            "epic": "epics",
+            "story": "stories",
+            "task": "tasks",
+        }.get(ticket_type, f"{ticket_type}s")
+
         # Validate ticket type exists
-        ticket_list = pending.get(f"{ticket_type}s", [])  # epics, stories, tasks
+        ticket_list = pending.get(plural_key, [])
         if not ticket_list:
-            return {"reply": f"No {ticket_type}s found in pending tickets. Available types: {', '.join(k for k in pending.keys() if pending[k])}"}
+            return {"reply": f"No {plural_key} found in pending tickets. Available types: {', '.join(k for k in pending.keys() if pending[k])}"}
 
         # Validate index
         if ticket_index < 0 or ticket_index >= len(ticket_list):
