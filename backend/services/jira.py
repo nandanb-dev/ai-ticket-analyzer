@@ -281,10 +281,15 @@ def push_tickets(project_key: str, ticket_data: dict) -> dict:
         for task in tasks:
             description = _build_task_description(task)
             parent_key = _resolve_parent_key(story_keys, task.get("story_index", 0))
+            desired_task_type = str(task.get("issue_type") or "").strip()
+            if not desired_task_type:
+                labels = [str(label).lower() for label in (task.get("labels") or [])]
+                desired_task_type = "Bug" if "bug" in labels else task_type
+            resolved_task_type = _map_issue_type(desired_task_type, available_types)
 
             result = create_issue(
                 project_key=project_key,
-                issue_type=task_type,
+                issue_type=resolved_task_type,
                 summary=task["summary"],
                 description=description,
                 priority=task.get("priority", "Medium"),

@@ -42,6 +42,7 @@ Return a single JSON object — no markdown fences, no extra text — matching t
     {
       "summary": "Implement [specific technical component]",
       "story_index": 0,
+      "issue_type": "Task",
       "description": "Technical implementation details, affected files, and approach.",
       "priority": "Medium",
       "story_points": 3,
@@ -55,6 +56,7 @@ Return a single JSON object — no markdown fences, no extra text — matching t
 }
 
 Rules:
+- For bug requests, represent the bug inside "tasks" with "issue_type": "Bug" and include "bug" in labels
 - If user specifies constraints (e.g., "one story"), follow those exactly - do not add extra tickets
 - If no constraints, cover EVERY feature mentioned in the PRD — do not skip anything
 - Keep summaries and descriptions concise and implementation-ready; avoid verbose or generic filler text
@@ -73,6 +75,7 @@ TICKET_GENERATION_PROMPT = ChatPromptTemplate.from_messages([
         """Analyze the following PRD/context and generate JIRA tickets.
 
 IMPORTANT - Respect user constraints:
+- If user asks for "bug" or "bug ticket" → generate exactly 1 task with issue_type="Bug" (no epics, no stories)
 - If user asks for "one story" or "1 story" → generate exactly 1 story (no epics, no tasks)
 - If user asks for "only stories" → generate only stories (no epics, no tasks)
 - If user asks for "2 tasks" → generate exactly 2 tasks

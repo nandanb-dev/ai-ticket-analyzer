@@ -37,14 +37,86 @@ def build_generation_context(state: ChatState) -> str:
     return "\n\n".join(sections)
 
 
+def normalize_ticket_data(ticket_data: dict[str, Any]) -> dict[str, Any]:
+    """Normalize model output to the canonical shape used by the app."""
+    if not isinstance(ticket_data, dict):
+        return {"epics": [], "stories": [], "tasks": []}
+
+    epics = list(ticket_data.get("epics") or [])
+    stories = list(ticket_data.get("stories") or [])
+    tasks = list(ticket_data.get("tasks") or [])
+    bugs = list(ticket_data.get("bugs") or [])
+
+    for bug in bugs:
+        if not isinstance(bug, dict):
+            continue
+        bug_copy = dict(bug)
+        bug_copy["issue_type"] = "Bug"
+        labels = list(bug_copy.get("labels") or [])
+        if "bug" not in labels:
+            labels.append("bug")
+        bug_copy["labels"] = labels
+        tasks.append(bug_copy)
+
+    normalized_tasks = []
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        task_copy = dict(task)
+        issue_type = str(task_copy.get("issue_type") or "").strip()
+        labels = list(task_copy.get("labels") or [])
+        if issue_type.lower() == "bug" and "bug" not in labels:
+            labels.append("bug")
+        task_copy["labels"] = labels
+        normalized_tasks.append(task_copy)
+
+    return {"epics": epics, "stories": stories, "tasks": normalized_tasks}
+
+
 def summarize_ticket_preview(ticket_data: dict[str, Any]) -> str:
-    epics = ticket_data.get("epics", [])
-    stories = ticket_data.get("stories", [])
-    tasks = ticket_data.get("tasks", [])
+    normalized = normalize_ticket_data(ticket_data)
+    epics = normalized.get("epics", [])
+    stories = normalized.get("stories", [])
+    tasks = normalized.get("tasks", [])
+    bug_count = sum(
+        1
+        for item in tasks
+        if str(item.get("issue_type", "")).lower() == "bug" or "bug" in (item.get("labels") or [])
+    )
+
+    def _fmt_count(count: int, singular: str, plural: str) -> str:
+        return f"{count} {singular if count == 1 else plural}"
+
+    def _join_parts(parts: list[str]) -> str:
+        if len(parts) == 1:
+            return parts[0]
+        if len(parts) == 2:
+            return f"{parts[0]} and {parts[1]}"
+        return f"{', '.join(parts[:-1])}, and {parts[-1]}"
+
     sample_titles = [item["summary"] for item in (epics + stories + tasks)[:6]]
     preview_lines = "\n".join(f"- {title}" for title in sample_titles) if sample_titles else "- No ticket titles generated"
+    if len(epics) == 0 and len(stories) == 0 and len(tasks) == bug_count and bug_count > 0:
+        drafted_summary = f"I have drafted {bug_count} bug ticket{'s' if bug_count != 1 else ''} based on the chat context."
+    else:
+        parts = []
+        if len(epics) > 0:
+            parts.append(_fmt_count(len(epics), "epic", "epics"))
+        if len(stories) > 0:
+            parts.append(_fmt_count(len(stories), "story", "stories"))
+        if len(tasks) > 0:
+            task_label = _fmt_count(len(tasks), "task", "tasks")
+            if bug_count:
+                task_label += f" ({bug_count} bug{'s' if bug_count != 1 else ''})"
+            parts.append(task_label)
+
+        if not parts:
+            drafted_summary = "I could not draft any tickets from the provided context."
+        else:
+            drafted_summary = f"I have drafted {_join_parts(parts)} based on the chat context."
+
     return (
-        f"I drafted {len(epics)} epics, {len(stories)} stories, and {len(tasks)} tasks based on the chat context.\n\n"
+        f"{drafted_summary}\n\n"
         f"Preview:\n{preview_lines}\n\n"
         "Review the draft below. When it looks right, confirm to create the tickets in Jira."
     )
@@ -56,13 +128,12 @@ def summarize_pending_tickets(pending: dict[str, Any]) -> str:
     for ticket_type in ["epics", "stories", "tasks"]:
         ticket_list = pending.get(ticket_type, [])
         if ticket_list:
-            singular = ticket_type.rstrip("s")
             for i, ticket in enumerate(ticket_list):
+                singular = "bug" if (ticket_type == "tasks" and str(ticket.get("issue_type", "")).lower() == "bug") else ticket_type.rstrip("s")
                 summary = ticket.get("summary", "Untitled")
                 priority = ticket.get("priority", "Medium")
                 lines.append(f"{singular} {i + 1}: \"{summary}\" (priority: {priority})")
     return "\n".join(lines) if lines else "No pending tickets"
-
 
 def retrieve_rag_context(query: str, project_key: str = "") -> Tuple[str, List[dict]]:
     """

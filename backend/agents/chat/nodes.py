@@ -13,6 +13,7 @@ from agents.chat.utils import (
     format_attachments,
     format_messages,
     normalize_clarification_analysis,
+    normalize_ticket_data,
     format_rag_context,
     retrieve_rag_context,
     summarize_ticket_preview,
@@ -75,6 +76,33 @@ def decide_node(state: ChatState) -> dict[str, Any]:
                     "decision": {
                         "action": "generate_tickets",
                         "reason": "Clarification was already asked once. User replied with details, so draft tickets now.",
+                        "missing_information": [],
+                    }
+                }
+
+        # Deterministic shortcut: when a draft exists and user asks to expand ticket types
+        # (e.g., "also want epics and tasks"), regenerate instead of editing a single ticket field.
+        if state.get("pending_tickets"):
+            latest_lower = latest_message.lower()
+            references_specific_ticket = bool(
+                re.search(r"\b(ticket|story|task|epic)\s*#?\d+\b", latest_lower)
+                or re.search(r"\b(first|second|third|fourth)\b", latest_lower)
+            )
+            references_edit_field = bool(
+                re.search(r"\b(summary|description|priority|story\s*points|label|acceptance\s*criteria)\b", latest_lower)
+            )
+            mentions_ticket_types = bool(
+                re.search(r"\b(epic|epics|story|stories|task|tasks|bug|bugs)\b", latest_lower)
+            )
+            asks_for_more_types = bool(
+                re.search(r"\b(also want|also need|include|add|need|want)\b", latest_lower)
+            )
+
+            if mentions_ticket_types and asks_for_more_types and not references_specific_ticket and not references_edit_field:
+                return {
+                    "decision": {
+                        "action": "generate_tickets",
+                        "reason": "User asked to expand draft coverage across ticket types, so regenerate the draft structure.",
                         "missing_information": [],
                     }
                 }
@@ -259,7 +287,8 @@ def generate_tickets_node(state: ChatState) -> dict[str, Any]:
         if rag_text:
             prd_content = f"{prd_content}\n\nKnowledge Base Context (RAG):\n{rag_text}"
 
-        ticket_data = get_ticket_chain().invoke({"prd_content": prd_content})
+        raw_ticket_data = get_ticket_chain().invoke({"prd_content": prd_content})
+        ticket_data = normalize_ticket_data(raw_ticket_data)
         had_clarification = any(
             (msg.get("role") == "assistant") and ("Development Readiness:" in (msg.get("content") or ""))
             for msg in (state.get("conversation_history") or [])

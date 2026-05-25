@@ -1,3 +1,33 @@
+import { JIRA_URL_RE, EPIC_KEYWORD_RE, PROJECT_KEY_RE, TICKET_KEY_RE } from "./constants";
+
+function detectAnalyzeIntent(text) {
+  const lowerText = text.toLowerCase();
+
+  // If user wants to create/draft tickets, don't treat this as analyze intent.
+  if (/^(create|generate|make|draft|build|add)\s/i.test(text)) {
+    return null;
+  }
+
+  // If text looks like ticket JSON payload, don't auto-route to analyze.
+  if (text.includes('"key"') || text.includes('"issue_type"') || text.includes('"summary"')) {
+    return null;
+  }
+
+  const urlMatch = text.match(JIRA_URL_RE);
+  if (urlMatch) return { ticket_key: urlMatch[1], context: text.replace(JIRA_URL_RE, "").trim() };
+
+  const epicMatch = text.match(EPIC_KEYWORD_RE);
+  if (epicMatch) return { epic_key: epicMatch[1], context: text.replace(EPIC_KEYWORD_RE, "").trim() };
+
+  const projectMatch = text.match(PROJECT_KEY_RE);
+  if (projectMatch) return { project_key: projectMatch[1], context: text.replace(PROJECT_KEY_RE, "").trim() };
+
+  const ticketMatch = text.match(TICKET_KEY_RE);
+  if (ticketMatch) return { ticket_key: ticketMatch[1], context: text.replace(TICKET_KEY_RE, "").trim() };
+
+  return null;
+}
+
 function renderContent(content) {
   // Parse inline markdown: **bold**, *italic*, _italic_, `code`
   const parseInlineMarkdown = (text) => {
@@ -47,7 +77,7 @@ function renderContent(content) {
   });
 }
 
-export { renderContent };
+export { detectAnalyzeIntent, renderContent };
 
 export function normalizeRagCitations(payload) {
   const raw =

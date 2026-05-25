@@ -10,7 +10,7 @@ import AnalysisCard from "./components/AnalysisCard";
 import ConfirmModal from "./components/ConfirmModal";
 import JiraIngestionModal from "./components/JiraIngestionModal";
 import ConfluenceIngestionModal from "./components/ConfluenceIngestionModal";
-import { normalizeRagCitations } from "./utils";
+import { detectAnalyzeIntent, normalizeRagCitations } from "./utils";
 
 function buildPendingTicketsFromAnalysis(analysis) {
   const grouped = { epics: [], stories: [], tasks: [] };
@@ -50,7 +50,16 @@ export default function HomePage() {
   const [editingAttachment, setEditingAttachment] = useState(null);
   const [editedContent, setEditedContent] = useState("");
   const [appliedTickets, setAppliedTickets] = useState(new Set());
-  const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: "", message: "", onConfirm: null });
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: null,
+    onCancel: null,
+    confirmText: "Remove",
+    cancelText: "Cancel",
+    variant: "danger",
+  });
   const [ragFiles, setRagFiles] = useState([]);
   const [isUploadingToRag, setIsUploadingToRag] = useState(false);
   const [ragIngestionStatus, setRagIngestionStatus] = useState({});
@@ -219,6 +228,74 @@ export default function HomePage() {
     console.groupEnd();
 
     return citations;
+  }
+
+  async function handleAnalyze(sentMessage, intent) {
+    const source = intent.ticket_key || intent.epic_key || intent.project_key;
+    const scopeLabel = intent.ticket_key ? `ticket ${source}` : intent.epic_key ? `epic ${source}` : `project ${source}`;
+    pushChatMessage("user", sentMessage);
+    const tempMsgId = Date.now();
+    pushChatMessage("assistant", `Analyzing ${scopeLabel}...`, tempMsgId);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/analyze-tickets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(intent),
+        signal: abortRef.current?.signal,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Analysis failed.");
+
+      const ragCitations = logRagDebug("analyze-response", data);
+      setAnalyzeSession({
+        ...data,
+        rag_citations: ragCitations,
+      });
+      setInspectorTab("analysis");
+
+      setSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              pending_tickets: buildPendingTicketsFromAnalysis(data.analysis),
+              awaiting_confirmation: true,
+            }
+          : prev
+      );
+
+      setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
+      setAppliedTickets(new Set());
+
+      const a = data.analysis || {};
+      let analysisMsg = `Analysis complete. Score ${a.overall_score ?? "-"}/10 across ${data.ticket_count || 0} ticket(s).`;
+
+      if (data.clarification_analysis) {
+        const readiness = data.clarification_analysis.readiness_score;
+        if (readiness !== undefined) {
+          analysisMsg += `\n\n**Development Readiness: ${readiness}/10**`;
+        }
+
+        if (data.clarification_analysis.questions?.length > 0) {
+          const questionIntro = readiness >= 8
+            ? "\n\nThe requirements look solid, but here are a few optional clarifications:"
+            : "\n\nI have some clarifying questions about the ticket(s):";
+          analysisMsg += questionIntro;
+        } else {
+          analysisMsg += "\n\nNo clarification needed - ready for development.";
+        }
+      }
+
+      pushChatMessage("assistant", analysisMsg, null, data.clarification_analysis);
+      toast.success(`Analysis complete - score ${a.overall_score ?? "-"}/10 across ${data.ticket_count || 0} ticket(s)`);
+    } catch (e) {
+      setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
+      if (e.name !== "AbortError") {
+        pushChatMessage("assistant", `Analysis failed: ${e.message}`);
+        setError(e.message);
+        toast.error(`Analysis failed: ${e.message}`);
+      }
+    }
   }
 
   async function handleFeedback(sentMessage) {
@@ -512,6 +589,49 @@ export default function HomePage() {
 
     try {
       if (analyzeSession?.session_id) {
+        const analyzeIntent = detectAnalyzeIntent(sentMessage);
+
+        if (analyzeIntent) {
+          setConfirmModal({
+            isOpen: true,
+            title: "Analysis Context Detected",
+            message:
+              "You pasted a Jira key/URL while analysis is active. Should I treat this as feedback for the current analysis, or analyze this new ticket instead?",
+            confirmText: "Treat as Feedback",
+            cancelText: "Analyze New Ticket",
+            variant: "",
+            onConfirm: async () => {
+              setConfirmModal({
+                isOpen: false,
+                title: "",
+                message: "",
+                onConfirm: null,
+                onCancel: null,
+                confirmText: "Remove",
+                cancelText: "Cancel",
+                variant: "danger",
+              });
+              requestAnimationFrame(() => scrollToLatest("smooth"));
+              await handleFeedback(sentMessage);
+            },
+            onCancel: async () => {
+              setConfirmModal({
+                isOpen: false,
+                title: "",
+                message: "",
+                onConfirm: null,
+                onCancel: null,
+                confirmText: "Remove",
+                cancelText: "Cancel",
+                variant: "danger",
+              });
+              requestAnimationFrame(() => scrollToLatest("smooth"));
+              await handleAnalyze(sentMessage, analyzeIntent);
+            },
+          });
+          return;
+        }
+
         requestAnimationFrame(() => scrollToLatest("smooth"));
         await handleFeedback(sentMessage);
         return;
@@ -1184,10 +1304,19 @@ export default function HomePage() {
         title={confirmModal.title}
         message={confirmModal.message}
         onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null })}
-        confirmText="Remove"
-        cancelText="Cancel"
-        variant="danger"
+        onCancel={confirmModal.onCancel || (() => setConfirmModal({
+          isOpen: false,
+          title: "",
+          message: "",
+          onConfirm: null,
+          onCancel: null,
+          confirmText: "Remove",
+          cancelText: "Cancel",
+          variant: "danger",
+        }))}
+        confirmText={confirmModal.confirmText || "Remove"}
+        cancelText={confirmModal.cancelText || "Cancel"}
+        variant={confirmModal.variant || "danger"}
       />
 
       <JiraIngestionModal
