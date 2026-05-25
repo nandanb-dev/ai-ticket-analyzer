@@ -1,4 +1,3 @@
-import re
 import anyio
 from typing import Optional
 from pydantic import BaseModel
@@ -12,28 +11,8 @@ from services.document import extract_text
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-# Jira project keys: 2-10 uppercase letters (e.g., KAN, PROJ, MYPROJECT)
-_PROJECT_KEY_PATTERN = re.compile(r"^([A-Z]{2,10})$|project[:\s]+([A-Z]{2,10})|([A-Z]{2,10})\s+is\s+the\s+project", re.IGNORECASE)
-
-
-def _extract_project_key(message: str) -> Optional[str]:
-    """Extract a potential Jira project key from user message."""
-    # Clean the message
-    msg = message.strip()
-    
-    # Check if entire message is just a project key (e.g., "KAN")
-    if re.match(r"^[A-Za-z]{2,10}$", msg):
-        return msg.upper()
-    
-    # Check for patterns like "project: KAN", "project KAN", "KAN is the project"
-    match = _PROJECT_KEY_PATTERN.search(msg)
-    if match:
-        # Return the first non-None group
-        for group in match.groups():
-            if group:
-                return group.upper()
-    
-    return None
+# Project key extraction is now handled by the LLM in the chat agent
+# Users can also explicitly select a project from the UI dropdown
 
 
 class CreateSessionRequest(BaseModel):
@@ -56,6 +35,7 @@ def _session_response(session) -> dict:
             "epics": len(pending.get("epics", [])),
             "stories": len(pending.get("stories", [])),
             "tasks": len(pending.get("tasks", [])),
+            "bugs": len(pending.get("bugs", [])),
         },
         "last_created": session.last_created,
     }
@@ -136,14 +116,11 @@ async def post_message(
     if not message.strip() and not context_text.strip() and not files:
         raise HTTPException(status_code=422, detail="Provide a message, context text, or uploaded files.")
 
-    # Update project key if explicitly provided
+    # Update project key if explicitly provided via UI
     if project_key.strip():
         session = chat_sessions.update_project_key(session_id, project_key)
-    # Auto-extract project key from message if session doesn't have one
-    elif not session.project_key and message.strip():
-        extracted_key = _extract_project_key(message)
-        if extracted_key:
-            session = chat_sessions.update_project_key(session_id, extracted_key)
+    # Project key can also be set via the draft panel dropdown
+    # No automatic extraction from message - let user explicitly select
 
     uploaded_names = []
     failed_files = []

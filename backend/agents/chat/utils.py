@@ -41,10 +41,29 @@ def summarize_ticket_preview(ticket_data: dict[str, Any]) -> str:
     epics = ticket_data.get("epics", [])
     stories = ticket_data.get("stories", [])
     tasks = ticket_data.get("tasks", [])
-    sample_titles = [item["summary"] for item in (epics + stories + tasks)[:6]]
+    bugs = ticket_data.get("bugs", [])
+    sample_titles = [item["summary"] for item in (epics + stories + tasks + bugs)[:6]]
     preview_lines = "\n".join(f"- {title}" for title in sample_titles) if sample_titles else "- No ticket titles generated"
+    
+    # Build dynamic count message
+    counts = []
+    if len(epics) > 0:
+        counts.append(f"{len(epics)} epic{'s' if len(epics) != 1 else ''}")
+    if len(stories) > 0:
+        counts.append(f"{len(stories)} stor{'ies' if len(stories) != 1 else 'y'}")
+    if len(tasks) > 0:
+        counts.append(f"{len(tasks)} task{'s' if len(tasks) != 1 else ''}")
+    if len(bugs) > 0:
+        counts.append(f"{len(bugs)} bug{'s' if len(bugs) != 1 else ''}")
+    
+    if counts:
+        count_text = ", ".join(counts)
+        intro = f"I drafted {count_text} based on the chat context."
+    else:
+        intro = "No tickets were generated."
+    
     return (
-        f"I drafted {len(epics)} epics, {len(stories)} stories, and {len(tasks)} tasks based on the chat context.\n\n"
+        f"{intro}\n\n"
         f"Preview:\n{preview_lines}\n\n"
         "Review the draft below. When it looks right, confirm to create the tickets in Jira."
     )
@@ -53,7 +72,7 @@ def summarize_ticket_preview(ticket_data: dict[str, Any]) -> str:
 def summarize_pending_tickets(pending: dict[str, Any]) -> str:
     """Build a summary of pending tickets for the edit_draft chain."""
     lines = []
-    for ticket_type in ["epics", "stories", "tasks"]:
+    for ticket_type in ["epics", "stories", "tasks", "bugs"]:
         ticket_list = pending.get(ticket_type, [])
         if ticket_list:
             singular = ticket_type.rstrip("s")

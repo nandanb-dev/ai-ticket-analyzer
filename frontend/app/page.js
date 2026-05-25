@@ -14,7 +14,7 @@ import ConfluenceIngestionModal from "./components/ConfluenceIngestionModal";
 import { normalizeRagCitations } from "./utils";
 
 function buildPendingTicketsFromAnalysis(analysis) {
-  const grouped = { epics: [], stories: [], tasks: [] };
+  const grouped = { epics: [], stories: [], tasks: [], bugs: [] };
   const tickets = analysis?.tickets || [];
 
   for (const t of tickets) {
@@ -32,6 +32,7 @@ function buildPendingTicketsFromAnalysis(analysis) {
 
     if (issueType === "epic") grouped.epics.push(draft);
     else if (issueType === "story") grouped.stories.push(draft);
+    else if (issueType === "bug") grouped.bugs.push(draft);
     else grouped.tasks.push(draft);
   }
 
@@ -570,17 +571,11 @@ export default function HomePage() {
         return;
       }
 
-      // All other messages go to chat API - let backend LLM decide the action
+      // All messages go to chat API - backend LLM decides the action
       setOptimisticMessage(sentMessage);
       const formData = new FormData();
       formData.append("message", sentMessage);
       files.forEach((file) => formData.append("files", file));
-      
-      // Extract project key from message if mentioned
-      const projectKeyMatch = sentMessage.match(/(?:project|in project|project key|project:)\s*([A-Z][A-Z0-9]{1,9})/i);
-      if (projectKeyMatch) {
-        formData.append("project_key", projectKeyMatch[1].toUpperCase());
-      }
 
       const response = await fetch(`${API_BASE_URL}/chat/sessions/${session.session_id}/messages`, {
         method: "POST",

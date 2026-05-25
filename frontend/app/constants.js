@@ -1,8 +1,12 @@
-const TICKET_KEY_RE = /\b([A-Za-z][A-Za-z0-9]+-\d+)\b/i;
-const JIRA_URL_RE = /atlassian\.net\/browse\/([A-Za-z][A-Za-z0-9]+-\d+)/i;
-const PROJECT_KEY_RE = /\bproject[:\s]+([A-Za-z][A-Za-z0-9]+)\b/i;
-const EPIC_KEYWORD_RE = /\bepic[:\s]+([A-Za-z][A-Za-z0-9]+-\d+)\b/i;
-const ANALYZE_INTENT_RE = /\b(analyz[e]?|review|inspect|check|audit|improve|fix|assess)\b.*\b(ticket|issue|story|task|epic|jira)\b|\b(ticket|issue|story|task|epic|jira)\b.*\b(analyz[e]?|review|inspect|check|audit|improve|fix|assess)\b/i;
+// These constants are no longer used for frontend intent detection
+// All intent detection is now handled by the backend LLM
+// Keeping for reference only
+
+const TICKET_KEY_RE = null;
+const JIRA_URL_RE = null;
+const PROJECT_KEY_RE = null;
+const EPIC_KEYWORD_RE = null;
+const ANALYZE_INTENT_RE = null;
 
 export {
   TICKET_KEY_RE,
