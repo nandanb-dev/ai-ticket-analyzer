@@ -1,13 +1,19 @@
+import re
 from typing import Any
 
+from agents.analyzer_agent import run_analyzer_agent
 from services.jira import push_tickets
+from services.analysis_sessions import analysis_sessions
 
 from agents.chat.chains import get_decision_chain, get_response_chain, get_ticket_chain, get_clarification_chain, get_edit_draft_chain
 from agents.chat.models import ChatState
 from agents.chat.utils import (
+    build_rag_query_from_state,
     build_generation_context,
     format_attachments,
     format_messages,
+    normalize_clarification_analysis,
+    normalize_ticket_data,
     format_rag_context,
     retrieve_rag_context,
     summarize_ticket_preview,
@@ -26,6 +32,81 @@ def decide_node(state: ChatState) -> dict[str, Any]:
                 }
             }
 
+        latest_message = (state.get("latest_user_message") or "").strip()
+
+        # Deterministic shortcut: if user enters a Jira ticket key directly, analyze that ticket immediately.
+        # This avoids relying solely on LLM routing for explicit ticket identifiers.
+        direct_ticket_match = re.fullmatch(r"([A-Z][A-Z0-9]+-\d+)", latest_message, re.IGNORECASE)
+        jira_url_match = re.search(r"atlassian\.net\/browse\/([A-Z][A-Z0-9]+-\d+)", latest_message, re.IGNORECASE)
+        if (direct_ticket_match or jira_url_match) and not state.get("pending_tickets"):
+            ticket_key = (direct_ticket_match.group(1) if direct_ticket_match else jira_url_match.group(1)).upper()
+            return {
+                "decision": {
+                    "action": "analyze_tickets",
+                    "reason": "User provided a Jira ticket identifier directly, so analyze that ticket immediately.",
+                    "missing_information": [],
+                    "analysis_scope": "ticket",
+                    "analysis_target": ticket_key,
+                    "analysis_context": "",
+                    "confluence_page": "",
+                }
+            }
+
+        history = state.get("conversation_history") or []
+        clarification_already_asked = any(
+            (msg.get("role") == "assistant") and (
+                "Development Readiness:" in (msg.get("content") or "")
+                or "I have a few questions to ensure we build the right thing:" in (msg.get("content") or "")
+                or "Can proceed with assumptions" in (msg.get("content") or "")
+            )
+            for msg in history
+        )
+
+        # Product requirement: ask clarification once, then draft tickets after the user replies.
+        if (
+            clarification_already_asked
+            and not state.get("awaiting_confirmation")
+            and not state.get("pending_tickets")
+            and (state.get("latest_user_message") or "").strip()
+        ):
+            latest = (state.get("latest_user_message") or "").strip().lower()
+            opt_out_terms = ["cancel", "stop", "not now", "hold", "wait"]
+            if not any(term in latest for term in opt_out_terms):
+                return {
+                    "decision": {
+                        "action": "generate_tickets",
+                        "reason": "Clarification was already asked once. User replied with details, so draft tickets now.",
+                        "missing_information": [],
+                    }
+                }
+
+        # Deterministic shortcut: when a draft exists and user asks to expand ticket types
+        # (e.g., "also want epics and tasks"), regenerate instead of editing a single ticket field.
+        if state.get("pending_tickets"):
+            latest_lower = latest_message.lower()
+            references_specific_ticket = bool(
+                re.search(r"\b(ticket|story|task|epic)\s*#?\d+\b", latest_lower)
+                or re.search(r"\b(first|second|third|fourth)\b", latest_lower)
+            )
+            references_edit_field = bool(
+                re.search(r"\b(summary|description|priority|story\s*points|label|acceptance\s*criteria)\b", latest_lower)
+            )
+            mentions_ticket_types = bool(
+                re.search(r"\b(epic|epics|story|stories|task|tasks|bug|bugs)\b", latest_lower)
+            )
+            asks_for_more_types = bool(
+                re.search(r"\b(also want|also need|include|add|need|want)\b", latest_lower)
+            )
+
+            if mentions_ticket_types and asks_for_more_types and not references_specific_ticket and not references_edit_field:
+                return {
+                    "decision": {
+                        "action": "generate_tickets",
+                        "reason": "User asked to expand draft coverage across ticket types, so regenerate the draft structure.",
+                        "missing_information": [],
+                    }
+                }
+
         decision = get_decision_chain().invoke({
             "forced_action": state.get("forced_action") or "none",
             "awaiting_confirmation": state["awaiting_confirmation"],
@@ -43,13 +124,30 @@ def decide_node(state: ChatState) -> dict[str, Any]:
 
 def respond_node(state: ChatState) -> dict[str, Any]:
     try:
+        rag_query = build_rag_query_from_state(state)
+        rag_text, rag_citations = retrieve_rag_context(
+            query=rag_query or state["latest_user_message"],
+            project_key=state.get("project_key", ""),
+        )
+
         response = get_response_chain().invoke({
             "history_text": format_messages(state["conversation_history"]),
             "attachment_text": format_attachments(state["attachments"]),
+            "rag_context": format_rag_context(rag_text),
             "context_text": state["context_text"] or "",
             "latest_user_message": state["latest_user_message"],
         })
-        return {"reply": response.content}
+
+        reply = response.content
+        if rag_citations:
+            source_lines = []
+            for citation in rag_citations[:3]:
+                title = citation.get("title") or citation.get("source_id") or "Unknown source"
+                source_lines.append(f"- {title}")
+            if source_lines:
+                reply += "\n\nSources:\n" + "\n".join(source_lines)
+
+        return {"reply": reply, "rag_citations": rag_citations}
     except Exception as exc:
         return {"error": f"Chat response failed: {exc}"}
 
@@ -66,12 +164,142 @@ def ask_for_more_context_node(state: ChatState) -> dict[str, Any]:
     return {"reply": reply}
 
 
+def analyze_tickets_node(state: ChatState) -> dict[str, Any]:
+    """Analyze existing Jira tickets based on structured decision output from the router."""
+    try:
+        decision = state.get("decision") or {}
+        scope = str(decision.get("analysis_scope") or "none").lower()
+        target = str(decision.get("analysis_target") or "").strip().upper()
+        user_context = str(decision.get("analysis_context") or "").strip()
+
+        if scope not in {"project", "epic", "ticket"} or not target:
+            return {
+                "reply": (
+                    "I can analyze existing Jira tickets, but I need the scope and key. "
+                    "Please specify one of: project key (for example SCRUM), epic key (for example SCRUM-12), "
+                    "or ticket key (for example SCRUM-44)."
+                )
+            }
+
+        project_key = target if scope == "project" else None
+        epic_key = target if scope == "epic" else None
+        ticket_key = target if scope == "ticket" else None
+
+        scope_label = (
+            f"project {project_key}" if project_key
+            else f"epic {epic_key}" if epic_key
+            else f"ticket {ticket_key}"
+        )
+
+        session = analysis_sessions.create_session(
+            project_key=project_key or "",
+            epic_key=epic_key or "",
+            ticket_key=ticket_key or "",
+            user_context=user_context,
+        )
+
+        result = run_analyzer_agent(
+            project_key=project_key,
+            epic_key=epic_key,
+            ticket_key=ticket_key,
+            user_context=user_context,
+        )
+
+        analysis = result.get("analysis") or {}
+        analysis_sessions.set_analysis(session.session_id, analysis)
+
+        clarification_analysis = None
+        tickets = result.get("raw_tickets") or []
+        if tickets:
+            ticket_context_parts = []
+            for ticket in tickets[:5]:
+                summary = str(ticket.get("summary") or "").strip()
+                description = str(ticket.get("description") or "").strip()
+                labels = ", ".join(ticket.get("labels") or [])
+                if summary or description or labels:
+                    ticket_context_parts.append(
+                        f"Ticket: {ticket.get('key', 'Unknown')}\n"
+                        f"Summary: {summary}\n"
+                        f"Description: {description[:800]}\n"
+                        f"Labels: {labels}"
+                    )
+
+            ticket_context = "\n\n".join(ticket_context_parts)
+            if user_context:
+                ticket_context = f"{ticket_context}\n\nAdditional user context:\n{user_context[:1500]}".strip()
+
+            rag_citations = result.get("rag_citations") or []
+            rag_text = "\n\n".join([
+                f"[Source: {c.get('source', 'unknown')}]\n{c.get('content', '')}"
+                for c in rag_citations[:5]
+            ])
+
+            if ticket_context:
+                clarification_result = get_clarification_chain().invoke({
+                    "history_text": "",
+                    "attachment_text": "",
+                    "context_text": ticket_context,
+                    "latest_user_message": "Analyze completeness of these ticket requirements",
+                    "rag_context": format_rag_context(rag_text),
+                })
+                clarification_analysis = clarification_result.model_dump()
+
+        analysis_result = {
+            "session_id": session.session_id,
+            "ticket_count": result.get("ticket_count", 0),
+            "source": result.get("source", ""),
+            "project_key": project_key,
+            "epic_key": epic_key,
+            "ticket_key": ticket_key,
+            "analysis": analysis,
+            "clarification_analysis": clarification_analysis,
+            "rag_citations": result.get("rag_citations", []),
+            "rag_used": bool(result.get("rag_citations")),
+        }
+
+        readiness = (
+            clarification_analysis.get("readiness_score")
+            if isinstance(clarification_analysis, dict)
+            else None
+        )
+        summary = f"Analysis complete for {scope_label}."
+        if readiness is not None:
+            summary += f" Development readiness: {readiness}/10."
+
+        return {
+            "analysis_result": analysis_result,
+            "reply": summary,
+            "clarification_analysis": clarification_analysis,
+        }
+    except Exception as exc:
+        return {"error": f"Ticket analysis failed: {exc}"}
+
+
 def generate_tickets_node(state: ChatState) -> dict[str, Any]:
     try:
-        ticket_data = get_ticket_chain().invoke({"prd_content": build_generation_context(state)})
+        rag_query = build_rag_query_from_state(state)
+        rag_text, rag_citations = retrieve_rag_context(
+            query=rag_query or state["latest_user_message"],
+            project_key=state.get("project_key", ""),
+        )
+
+        prd_content = build_generation_context(state)
+        if rag_text:
+            prd_content = f"{prd_content}\n\nKnowledge Base Context (RAG):\n{rag_text}"
+
+        raw_ticket_data = get_ticket_chain().invoke({"prd_content": prd_content})
+        ticket_data = normalize_ticket_data(raw_ticket_data)
+        had_clarification = any(
+            (msg.get("role") == "assistant") and ("Development Readiness:" in (msg.get("content") or ""))
+            for msg in (state.get("conversation_history") or [])
+        )
+        preview = summarize_ticket_preview(ticket_data)
+        if had_clarification:
+            preview = "Readiness: 10/10 after your clarification. Drafted Jira tickets below.\n\n" + preview
         return {
             "generated_tickets": ticket_data,
-            "reply": summarize_ticket_preview(ticket_data),
+            "reply": preview,
+            "rag_citations": rag_citations,
         }
     except Exception as exc:
         return {"error": f"Ticket generation failed: {exc}"}
@@ -139,6 +367,8 @@ def clarify_requirements_node(state: ChatState) -> dict[str, Any]:
                 "and validation scenarios). Some clarifications may still be needed, but this is not near-zero readiness."
             )
 
+        analysis = normalize_clarification_analysis(analysis)
+
         # Build conversational response with questions
         reply_parts = []
 
@@ -170,7 +400,7 @@ def clarify_requirements_node(state: ChatState) -> dict[str, Any]:
             other = [q for q in analysis.questions if q.category not in blocking_categories and q.category not in important_categories]
 
             question_num = 1
-            for q in (blocking + important + other)[:10]:  # Limit to 10 questions
+            for q in (blocking + important + other)[:3]:
                 reply_parts.append(f"\n**{question_num}. {q.question}**")
                 if q.suggestions:
                     reply_parts.append("   _Suggestions:_")
@@ -194,6 +424,7 @@ def clarify_requirements_node(state: ChatState) -> dict[str, Any]:
         result = {
             "reply": "\n".join(reply_parts),
             "clarification_analysis": analysis.model_dump(),
+            "rag_citations": rag_citations,
         }
         
         # Include RAG citations in the analysis

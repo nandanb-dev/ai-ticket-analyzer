@@ -4,7 +4,15 @@ from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 
-from config import CHAT_MODEL, OPENAI_API_KEY, GOOGLE_API_KEY, GROQ_API_KEY
+from config import (
+    CHAT_MODEL,
+    OPENAI_API_KEY,
+    GOOGLE_API_KEY,
+    GROQ_API_KEY,
+    OPENAI_CHAT_MODEL,
+    GOOGLE_CHAT_MODEL,
+    GROQ_CHAT_MODEL,
+)
 from prompts.system import SYSTEM_PROMPT
 from prompts.ticket_generation import TICKET_GENERATION_PROMPT
 from prompts.clarification import CLARIFICATION_SYSTEM_PROMPT, DECISION_SYSTEM_PROMPT
@@ -20,19 +28,28 @@ _clarification_chain = None
 _edit_draft_chain = None
 
 
-def get_llm() -> ChatGroq: #ChatGoogleGenerativeAI, ChatOpenAI, ChatGroq
+def get_llm():
     global _base_llm
     if _base_llm is not None:
         return _base_llm
-    # if not OPENAI_API_KEY:
-    #     raise RuntimeError("OPENAI_API_KEY is not configured in .env")
-    # _base_llm = ChatOpenAI(model=CHAT_MODEL, temperature=0.2, api_key=OPENAI_API_KEY)
-    # if not GOOGLE_API_KEY:
-    #     raise RuntimeError("GOOGLE_API_KEY is not configured in .env")
-    # _base_llm = ChatGoogleGenerativeAI(model=CHAT_MODEL, temperature=0.2, api_key=GOOGLE_API_KEY)
-    if not GROQ_API_KEY:
-        raise RuntimeError("GROQ_API_KEY is not configured in .env")
-    _base_llm = ChatGroq(model=CHAT_MODEL, temperature=0.2, api_key=GROQ_API_KEY)
+
+    if OPENAI_API_KEY:
+        model = CHAT_MODEL if CHAT_MODEL.startswith(("gpt", "o1", "o3", "o4")) else OPENAI_CHAT_MODEL
+        _base_llm = ChatOpenAI(model=model, temperature=0.2, api_key=OPENAI_API_KEY)
+        return _base_llm
+
+    if GOOGLE_API_KEY:
+        model = CHAT_MODEL if "gemini" in CHAT_MODEL.lower() else GOOGLE_CHAT_MODEL
+        _base_llm = ChatGoogleGenerativeAI(model=model, temperature=0.2, api_key=GOOGLE_API_KEY)
+        return _base_llm
+
+    if GROQ_API_KEY:
+        model = CHAT_MODEL if "llama" in CHAT_MODEL.lower() or "mixtral" in CHAT_MODEL.lower() else GROQ_CHAT_MODEL
+        _base_llm = ChatGroq(model=model, temperature=0.2, api_key=GROQ_API_KEY)
+        return _base_llm
+
+    raise RuntimeError("No LLM API key configured. Set OPENAI_API_KEY (preferred) in backend/.env")
+
     return _base_llm
 
 
@@ -70,12 +87,14 @@ def get_response_chain():
             SYSTEM_PROMPT + "\n"
             "You are now in a live chat with a user. Be concise, grounded in the provided context, and helpful. "
             "If the user is discussing requirements, keep the answer context-aware and mention missing details only when truly needed. "
-            "Do not invent facts not present in the conversation or uploaded material."
+            "Do not invent facts not present in the conversation, uploaded material, or retrieved knowledge-base context. "
+            "When retrieved context is relevant, use it to answer directly and accurately."
         ),
         (
             "human",
             "Conversation so far:\n{history_text}\n\n"
             "Known documents:\n{attachment_text}\n\n"
+            "Knowledge Base Context (RAG):\n{rag_context}\n\n"
             "Additional context in this turn:\n{context_text}\n\n"
             "User message:\n{latest_user_message}"
         ),

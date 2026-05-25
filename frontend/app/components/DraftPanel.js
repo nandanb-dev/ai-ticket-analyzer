@@ -29,14 +29,16 @@ function DraftPanel({ tickets, onUpdate, onDelete, onCreate, isCreating, canCrea
     fetchProjects();
   }, []);
   const handleUpdate = (index, type, updatedTicket) => {
-    const key = type.toLowerCase() + 's';
+    const normalizedType = type === 'Bug' ? 'Task' : type;
+    const key = normalizedType.toLowerCase() + 's';
     const list = [...(tickets[key] || [])];
     list[index] = updatedTicket;
     onUpdate({ ...tickets, [key]: list });
   };
 
   const handleDelete = (index, type) => {
-    const key = type.toLowerCase() + 's';
+    const normalizedType = type === 'Bug' ? 'Task' : type;
+    const key = normalizedType.toLowerCase() + 's';
     const list = (tickets[key] || []).filter((_, i) => i !== index);
     onUpdate({ ...tickets, [key]: list });
   };
@@ -44,6 +46,9 @@ function DraftPanel({ tickets, onUpdate, onDelete, onCreate, isCreating, canCrea
   const epicCount = (tickets.epics || []).length;
   const storyCount = (tickets.stories || []).length;
   const taskCount = (tickets.tasks || []).length;
+  const bugCount = (tickets.tasks || []).filter(
+    (ticket) => String(ticket?.issue_type || '').toLowerCase() === 'bug' || (ticket?.labels || []).includes('bug')
+  ).length;
   const totalCount = epicCount + storyCount + taskCount;
 
   return (
@@ -56,7 +61,7 @@ function DraftPanel({ tickets, onUpdate, onDelete, onCreate, isCreating, canCrea
         <div className="draft-stats">
           <span className="stat-pill epic">{epicCount} Epics</span>
           <span className="stat-pill story">{storyCount} Stories</span>
-          <span className="stat-pill task">{taskCount} Tasks</span>
+          <span className="stat-pill task">{taskCount} Tasks{bugCount ? ` (${bugCount} Bug${bugCount === 1 ? '' : 's'})` : ''}</span>
         </div>
       </div>
 
@@ -123,7 +128,7 @@ function DraftPanel({ tickets, onUpdate, onDelete, onCreate, isCreating, canCrea
             <DraftTicketCard
               key={`task-${i}`}
               ticket={ticket}
-              type="Task"
+              type={String(ticket?.issue_type || '').toLowerCase() === 'bug' || (ticket?.labels || []).includes('bug') ? 'Bug' : 'Task'}
               index={i}
               onUpdate={handleUpdate}
               onDelete={handleDelete}

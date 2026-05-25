@@ -213,6 +213,14 @@ Rules:
 - If the user rejects a suggestion with a reason, update the suggestion to reflect their guidance.
 - If the user adds new context, re-evaluate affected tickets and update issues_found and suggested_updates accordingly.
 - Return the COMPLETE revised analysis JSON (not a diff).
+
+Quality and brevity requirements for revised Jira output:
+- Keep revised summary/description text concise, precise, and implementation-ready.
+- Remove repetition and avoid generic filler language.
+- Ensure acceptance_criteria are explicit Given/When/Then statements and directly testable.
+- Keep suggested_updates focused on the smallest effective change set needed to satisfy feedback.
+- Do not over-expand ticket descriptions unless user explicitly requests deeper detail.
+- Preserve consistent terminology and issue scope from the user's feedback.
 """
 
 _ANALYSIS_SCHEMA_HINT = """

@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from agents.analyzer_agent import run_analyzer_agent, run_apply_agent, run_refine_agent
 from agents.chat.chains import get_clarification_chain
-from agents.chat.utils import retrieve_rag_context, format_rag_context
+from agents.chat.utils import retrieve_rag_context, format_rag_context, normalize_clarification_analysis
 from services.analysis_sessions import analysis_sessions
 from services.confluence import get_page_content_as_text
 
@@ -271,6 +271,8 @@ async def analyze_tickets(req: AnalyzeRequest):
                     "The requirements include baseline structure and validation scenarios. "
                     "Clarifications may still be needed, but this is not near-empty readiness."
                 )
+
+            clarification_result = normalize_clarification_analysis(clarification_result)
 
             clarification_analysis = clarification_result.model_dump()
     except Exception as e:

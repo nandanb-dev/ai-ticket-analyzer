@@ -25,6 +25,13 @@ from rag.reranker import rerank
 
 logger = logging.getLogger(__name__)
 
+_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has", "he", "in", "is",
+    "it", "its", "of", "on", "that", "the", "to", "was", "were", "will", "with", "i", "we", "you",
+    "they", "them", "this", "these", "those", "or", "if", "then", "than", "can", "could", "should",
+    "would", "need", "want", "about", "into", "our", "your", "my", "me", "do", "does", "did",
+}
+
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
@@ -63,6 +70,62 @@ def retrieve(
         return []
     except Exception as exc:
         logger.error("Retrieval failed: %s", exc)
+        return []
+
+
+def retrieve_keyword_first(
+    query: str,
+    top_n: int = 8,
+    metadata_filter: Optional[MetadataFilter] = None,
+) -> List[RetrievalResult]:
+    """
+    Fast lexical retrieval used for chat turns.
+
+    This avoids embedding + cross-encoder latency and returns BM25-ranked hits
+    when query keywords exist in ingested documents.
+    """
+    try:
+        bm25_hits = _bm25_search(query, limit=max(top_n * 2, top_n), metadata_filter=metadata_filter)
+        if not bm25_hits:
+            return []
+
+        ordered_ids = [chunk_id for chunk_id, _score in bm25_hits]
+        score_map = {chunk_id: float(score) for chunk_id, score in bm25_hits}
+        chunk_data = _fetch_chunks_by_ids(ordered_ids)
+
+        results: List[RetrievalResult] = []
+        for chunk_id in ordered_ids:
+            row = chunk_data.get(chunk_id)
+            if not row:
+                continue
+            results.append(
+                RetrievalResult(
+                    chunk_id=chunk_id,
+                    document_id=row["document_id"],
+                    content=row["content"],
+                    score=score_map.get(chunk_id, 0.0),
+                    source_type=row["source_type"] or "",
+                    source_id=row["source_id"] or "",
+                    title=row["title"] or "",
+                    source_url=row["source_url"],
+                    ticket_type=row["ticket_type"],
+                    severity=row["severity"],
+                    component=row["component"],
+                    team=row["team"],
+                    service=row["service"],
+                    heading_context=row["heading_context"],
+                    metadata=row["metadata"] or {},
+                )
+            )
+            if len(results) >= top_n:
+                break
+
+        return results
+    except RuntimeError as exc:
+        logger.warning("Keyword retrieval skipped (DB unavailable): %s", exc)
+        return []
+    except Exception as exc:
+        logger.error("Keyword retrieval failed: %s", exc)
         return []
 
 
@@ -120,9 +183,13 @@ def _bm25_search(
     sql = f"""
         SELECT
             c.id,
-            ts_rank_cd(c.content_tsv, to_tsquery('english', %s)) AS bm25_score
+            ts_rank_cd(
+                COALESCE(c.content_tsv, to_tsvector('english', COALESCE(c.content, ''))),
+                to_tsquery('english', %s)
+            ) AS bm25_score
         FROM rag_chunks c
-        WHERE c.content_tsv @@ to_tsquery('english', %s)
+        WHERE COALESCE(c.content_tsv, to_tsvector('english', COALESCE(c.content, '')))
+              @@ to_tsquery('english', %s)
           {where_clause}
         ORDER BY bm25_score DESC
         LIMIT %s
@@ -138,15 +205,31 @@ def _bm25_search(
 
 def _text_to_tsquery(text: str) -> str:
     """Convert a plain text query to a PostgreSQL tsquery string."""
-    # Extract meaningful tokens (alphabetic + digits, min length 2)
-    tokens = re.findall(r"[A-Za-z0-9_]{2,}", text)
+    tokens = _extract_keywords(text)
     if not tokens:
         return ""
-    # Use 'or' (|) between terms for better recall with BM25
-    # Escape each token for tsquery safety
+    # Use OR to maximize recall in short chat prompts and surface doc citations quickly.
     safe_tokens = [re.sub(r"[^A-Za-z0-9_]", "", t) for t in tokens[:20]]
     safe_tokens = [t for t in safe_tokens if t]
-    return " | ".join(safe_tokens) if safe_tokens else ""
+    return " | ".join(f"{t}:*" for t in safe_tokens) if safe_tokens else ""
+
+
+def _extract_keywords(text: str) -> List[str]:
+    """Extract lexical keywords for BM25/FTS matching."""
+    raw_tokens = re.findall(r"[A-Za-z0-9_]{2,}", (text or "").lower())
+    filtered = [t for t in raw_tokens if t not in _STOPWORDS]
+
+    # Preserve order and keep the query compact for fast FTS.
+    seen = set()
+    keywords: List[str] = []
+    for token in filtered:
+        if token in seen:
+            continue
+        seen.add(token)
+        keywords.append(token)
+        if len(keywords) >= 16:
+            break
+    return keywords
 
 
 # ── Reciprocal Rank Fusion ────────────────────────────────────────────────────

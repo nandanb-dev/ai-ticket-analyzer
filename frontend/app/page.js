@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { Paperclip, FileText, X, Send, Search, Square, Trash2, Upload, Ticket, BookOpen } from "lucide-react";
-import { detectAnalyzeIntent } from "./utils";
 import API_BASE_URL from "./config";
 import MessageBubble from "./components/MessageBubble";
 import DraftPanel from "./components/DraftPanel";
@@ -11,7 +10,7 @@ import AnalysisCard from "./components/AnalysisCard";
 import ConfirmModal from "./components/ConfirmModal";
 import JiraIngestionModal from "./components/JiraIngestionModal";
 import ConfluenceIngestionModal from "./components/ConfluenceIngestionModal";
-import { normalizeRagCitations } from "./utils";
+import { detectAnalyzeIntent, normalizeRagCitations } from "./utils";
 
 function buildPendingTicketsFromAnalysis(analysis) {
   const grouped = { epics: [], stories: [], tasks: [] };
@@ -51,7 +50,16 @@ export default function HomePage() {
   const [editingAttachment, setEditingAttachment] = useState(null);
   const [editedContent, setEditedContent] = useState("");
   const [appliedTickets, setAppliedTickets] = useState(new Set());
-  const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: "", message: "", onConfirm: null });
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: null,
+    onCancel: null,
+    confirmText: "Remove",
+    cancelText: "Cancel",
+    variant: "danger",
+  });
   const [ragFiles, setRagFiles] = useState([]);
   const [isUploadingToRag, setIsUploadingToRag] = useState(false);
   const [ragIngestionStatus, setRagIngestionStatus] = useState({});
@@ -64,6 +72,7 @@ export default function HomePage() {
   const ragFileInputRef = useRef(null);
   const textareaRef = useRef(null);
   const abortRef = useRef(null);
+  const messageStreamRef = useRef(null);
 
   useEffect(() => {
     if (session) return;
@@ -121,9 +130,11 @@ export default function HomePage() {
       const newMsgs = sessionMsgs.slice(prevMsgs.length);
       setChatMessages(prev => {
         // Add new messages with timestamps
-        const msgsWithTs = newMsgs.map(msg => ({
+        const msgsWithTs = newMsgs.map((msg, i) => ({
           ...msg,
-          _ts: Date.now()
+          _ts: Date.now(),
+          _localId: `${Date.now()}-${prevMsgs.length + i}`,
+          isStreaming: msg.role === "assistant",
         }));
         return [...prev, ...msgsWithTs];
       });
@@ -146,25 +157,50 @@ export default function HomePage() {
     });
   }, [chatMessages]);
 
+  function scrollToLatest(behavior = "smooth") {
+    const el = messageStreamRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }
+
+  useEffect(() => {
+    requestAnimationFrame(() => scrollToLatest("smooth"));
+  }, [allMessages.length, optimisticMessage, isSending]);
+
   function pushChatMessage(role, content, id = null, clarificationAnalysis = null) {
     setChatMessages((prev) => [...prev, { 
       role, 
       content, 
       _ts: Date.now(),
+      _localId: `${Date.now()}-${prev.length}`,
       ...(id && { id }), 
       ...(clarificationAnalysis && { clarificationAnalysis }) 
     }]);
   }
 
+  function handleStreamEnd(localId) {
+    if (!localId) return;
+    setChatMessages((prev) =>
+      prev.map((m) => (m._localId === localId ? { ...m, isStreaming: false } : m))
+    );
+  }
+
   function handleSuggestionClick(question, suggestion) {
-    // Fill textarea with the question and selected suggestion
-    const answerText = `${suggestion}`;
-    setMessage(answerText);
-    if (textareaRef.current) {
-      textareaRef.current.focus();
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
+    // Append selected suggestions so user can choose across all questions one by one.
+    const nextLine = `- ${suggestion}`;
+    setMessage((prev) => {
+      const current = (prev || "").trim();
+      if (current.includes(nextLine)) return prev;
+      return current ? `${current}\n${nextLine}` : nextLine;
+    });
+
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+      }
+    });
   }
 
   function logRagDebug(stage, payload) {
@@ -199,7 +235,7 @@ export default function HomePage() {
     const scopeLabel = intent.ticket_key ? `ticket ${source}` : intent.epic_key ? `epic ${source}` : `project ${source}`;
     pushChatMessage("user", sentMessage);
     const tempMsgId = Date.now();
-    pushChatMessage("assistant", `Analyzing ${scopeLabel}…`, tempMsgId);
+    pushChatMessage("assistant", `Analyzing ${scopeLabel}...`, tempMsgId);
 
     try {
       const res = await fetch(`${API_BASE_URL}/analyze-tickets`, {
@@ -228,40 +264,31 @@ export default function HomePage() {
           : prev
       );
 
-      // Remove the temporary analyzing message
       setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
-      setAppliedTickets(new Set()); // Reset applied tickets for new analysis
+      setAppliedTickets(new Set());
+
       const a = data.analysis || {};
-      const tickets = a.tickets || [];
-      const critical = tickets.flatMap((t) => t.issues_found || []).filter((i) => i.severity === "critical").length;
-      const major = tickets.flatMap((t) => t.issues_found || []).filter((i) => i.severity === "major").length;
-      
-      // Build analysis summary message
-      let analysisMsg = `Analysis complete. ${ragCitations.length} source(s) retrieved from RAG.`;
-      
-      // Add readiness score (clarification questions will be shown via ClarificationInline component)
+      let analysisMsg = `Analysis complete. Score ${a.overall_score ?? "-"}/10 across ${data.ticket_count || 0} ticket(s).`;
+
       if (data.clarification_analysis) {
         const readiness = data.clarification_analysis.readiness_score;
         if (readiness !== undefined) {
           analysisMsg += `\n\n**Development Readiness: ${readiness}/10**`;
         }
-        
+
         if (data.clarification_analysis.questions?.length > 0) {
-          const questionIntro = readiness >= 8 
+          const questionIntro = readiness >= 8
             ? "\n\nThe requirements look solid, but here are a few optional clarifications:"
             : "\n\nI have some clarifying questions about the ticket(s):";
           analysisMsg += questionIntro;
-          // Questions with clickable suggestions will be rendered by ClarificationInline component
         } else {
           analysisMsg += "\n\nNo clarification needed - ready for development.";
         }
       }
-      
-      // Pass clarification_analysis to enable clickable suggestion chips
+
       pushChatMessage("assistant", analysisMsg, null, data.clarification_analysis);
-      toast.success(`Analysis complete — score ${a.overall_score ?? "—"}/10 across ${data.ticket_count} ticket(s)`);
+      toast.success(`Analysis complete - score ${a.overall_score ?? "-"}/10 across ${data.ticket_count || 0} ticket(s)`);
     } catch (e) {
-      // Remove the temporary analyzing message on error too
       setChatMessages((prev) => prev.filter((m) => m.id !== tempMsgId));
       if (e.name !== "AbortError") {
         pushChatMessage("assistant", `Analysis failed: ${e.message}`);
@@ -561,23 +588,64 @@ export default function HomePage() {
     abortRef.current = controller;
 
     try {
-      const intent = detectAnalyzeIntent(sentMessage);
+      if (analyzeSession?.session_id) {
+        const analyzeIntent = detectAnalyzeIntent(sentMessage);
 
-      // Only frontend routing: ticket IDs go to analyze endpoint
-      // Everything else goes to chat API where backend LLM decides routing
-      if (intent) {
-        await handleAnalyze(sentMessage, intent);
+        if (analyzeIntent) {
+          setConfirmModal({
+            isOpen: true,
+            title: "Analysis Context Detected",
+            message:
+              "You pasted a Jira key/URL while analysis is active. Should I treat this as feedback for the current analysis, or analyze this new ticket instead?",
+            confirmText: "Treat as Feedback",
+            cancelText: "Analyze New Ticket",
+            variant: "",
+            onConfirm: async () => {
+              setConfirmModal({
+                isOpen: false,
+                title: "",
+                message: "",
+                onConfirm: null,
+                onCancel: null,
+                confirmText: "Remove",
+                cancelText: "Cancel",
+                variant: "danger",
+              });
+              requestAnimationFrame(() => scrollToLatest("smooth"));
+              await handleFeedback(sentMessage);
+            },
+            onCancel: async () => {
+              setConfirmModal({
+                isOpen: false,
+                title: "",
+                message: "",
+                onConfirm: null,
+                onCancel: null,
+                confirmText: "Remove",
+                cancelText: "Cancel",
+                variant: "danger",
+              });
+              requestAnimationFrame(() => scrollToLatest("smooth"));
+              await handleAnalyze(sentMessage, analyzeIntent);
+            },
+          });
+          return;
+        }
+
+        requestAnimationFrame(() => scrollToLatest("smooth"));
+        await handleFeedback(sentMessage);
         return;
       }
 
-      // All other messages go to chat API - let backend LLM decide the action
+      // Agentic routing lives in backend chat orchestration.
+      // Frontend always sends user turns to the chat endpoint.
       setOptimisticMessage(sentMessage);
       const formData = new FormData();
       formData.append("message", sentMessage);
       files.forEach((file) => formData.append("files", file));
       
       // Extract project key from message if mentioned
-      const projectKeyMatch = sentMessage.match(/(?:project|in project|project key|project:)\s*([A-Z][A-Z0-9]{1,9})/i);
+      const projectKeyMatch = sentMessage.match(/\b(?:project(?:\s+key)?|in\s+project)\s*[:=-]?\s*([A-Z][A-Z0-9]{1,9})\b/);
       if (projectKeyMatch) {
         formData.append("project_key", projectKeyMatch[1].toUpperCase());
       }
@@ -604,7 +672,33 @@ export default function HomePage() {
         }
       }
 
+      if (data.rag_citations && data.messages && data.messages.length > 0) {
+        const lastIdx = data.messages.length - 1;
+        if (data.messages[lastIdx].role === "assistant") {
+          data.messages[lastIdx] = {
+            ...data.messages[lastIdx],
+            ragCitations: data.rag_citations,
+          };
+        }
+      }
+
+      if (data.analysis_result) {
+        const ragCitations = logRagDebug("chat-analyze-response", data.analysis_result);
+        setAnalyzeSession({
+          ...data.analysis_result,
+          rag_citations: ragCitations,
+        });
+        setInspectorTab("analysis");
+        setAppliedTickets(new Set());
+
+        if (data.analysis_result.analysis) {
+          data.pending_tickets = buildPendingTicketsFromAnalysis(data.analysis_result.analysis);
+          data.awaiting_confirmation = true;
+        }
+      }
+
       setSession(data);
+      requestAnimationFrame(() => scrollToLatest("smooth"));
       
       // Show warning for failed file extractions
       if (data.failed_files && data.failed_files.length > 0) {
@@ -703,16 +797,19 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="message-stream">
+          <div className="message-stream" ref={messageStreamRef}>
             {(session?.messages?.length || chatMessages.length || optimisticMessage) ? (
               <>
                 {allMessages.map((entry, index) => (
                   <MessageBubble 
-                    key={`msg-${index}`} 
+                    key={entry._localId || `msg-${entry.role}-${index}`} 
                     role={entry.role} 
                     content={entry.content}
                     clarificationAnalysis={entry.clarificationAnalysis}
+                    ragCitations={entry.ragCitations}
                     onSuggestionClick={handleSuggestionClick}
+                    stream={Boolean(entry.isStreaming)}
+                    onStreamEnd={() => handleStreamEnd(entry._localId)}
                   />
                 ))}
                 {optimisticMessage && <MessageBubble role="user" content={optimisticMessage} />}
@@ -1207,10 +1304,19 @@ export default function HomePage() {
         title={confirmModal.title}
         message={confirmModal.message}
         onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null })}
-        confirmText="Remove"
-        cancelText="Cancel"
-        variant="danger"
+        onCancel={confirmModal.onCancel || (() => setConfirmModal({
+          isOpen: false,
+          title: "",
+          message: "",
+          onConfirm: null,
+          onCancel: null,
+          confirmText: "Remove",
+          cancelText: "Cancel",
+          variant: "danger",
+        }))}
+        confirmText={confirmModal.confirmText || "Remove"}
+        cancelText={confirmModal.cancelText || "Cancel"}
+        variant={confirmModal.variant || "danger"}
       />
 
       <JiraIngestionModal

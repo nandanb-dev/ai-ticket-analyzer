@@ -1,4 +1,5 @@
 import { renderContent } from "../utils";
+import { useEffect, useMemo, useState } from "react";
 
 function ClarificationInline({ analysis, onSuggestionClick }) {
   if (!analysis) return null;
@@ -80,12 +81,89 @@ function ClarificationInline({ analysis, onSuggestionClick }) {
   );
 }
 
-function MessageBubble({ role, content, clarificationAnalysis, onSuggestionClick }) {
+function getPrimaryAssistantContent(content, clarificationAnalysis) {
+  if (!clarificationAnalysis || !content) return content;
+
+  const markers = [
+    "**Development Readiness",
+    "Development Readiness:",
+    "I have a few questions to ensure we build the right thing:",
+    "The requirements look solid! I can proceed with ticket generation.",
+  ];
+
+  const cutPositions = markers
+    .map((marker) => content.indexOf(marker))
+    .filter((idx) => idx >= 0);
+
+  if (!cutPositions.length) return content;
+
+  const cutAt = Math.min(...cutPositions);
+  const head = content.slice(0, cutAt).trim();
+  return head || "I analyzed your requirements. See the structured clarification details below.";
+}
+
+function MessageBubble({ role, content, clarificationAnalysis, ragCitations = [], onSuggestionClick, stream = false, onStreamEnd = null }) {
+  const displayBaseContent = useMemo(
+    () => (role === "assistant" ? getPrimaryAssistantContent(content, clarificationAnalysis) : content),
+    [role, content, clarificationAnalysis]
+  );
+
+  const [renderedContent, setRenderedContent] = useState(
+    role === "assistant" && stream ? "" : displayBaseContent
+  );
+
+  useEffect(() => {
+    if (role !== "assistant") {
+      setRenderedContent(displayBaseContent);
+      return;
+    }
+
+    if (!stream) {
+      setRenderedContent(displayBaseContent);
+      return;
+    }
+
+    let idx = 0;
+    const text = displayBaseContent || "";
+    const chunkSize = 3;
+    const timer = setInterval(() => {
+      idx = Math.min(idx + chunkSize, text.length);
+      setRenderedContent(text.slice(0, idx));
+      if (idx >= text.length) {
+        clearInterval(timer);
+        if (onStreamEnd) onStreamEnd();
+      }
+    }, 16);
+
+    return () => clearInterval(timer);
+  }, [role, displayBaseContent, stream, onStreamEnd]);
+
   return (
     <article className={`message-card ${role === "assistant" ? "assistant" : "user"}`}>
       <span className="message-role">{role}</span>
       <div className="msg-body">
-        {role === "assistant" ? renderContent(content) : <p>{content}</p>}
+        {role === "assistant" ? renderContent(renderedContent) : <p>{content}</p>}
+        {role === "assistant" && Array.isArray(ragCitations) && ragCitations.length > 0 && (
+          <div className="clarification-inline" style={{ marginTop: 10 }}>
+            <div className="clarification-gaps">
+              <span className="gaps-label">Sources:</span>
+              <div className="gaps-list">
+                {ragCitations.slice(0, 5).map((source, i) => (
+                  <a
+                    key={`${source.source_id || source.title || i}`}
+                    href={source.source_url || "#"}
+                    target={source.source_url ? "_blank" : undefined}
+                    rel={source.source_url ? "noreferrer" : undefined}
+                    className="gap-tag"
+                    style={{ textDecoration: "none" }}
+                  >
+                    {source.title || source.source_id || `Source ${i + 1}`}
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
         {role === "assistant" && clarificationAnalysis && (
           <ClarificationInline 
             analysis={clarificationAnalysis} 

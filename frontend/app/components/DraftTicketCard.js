@@ -58,7 +58,10 @@ function DraftTicketCard({ ticket, type, index, onUpdate, onDelete }) {
         <div className="draft-ticket-body">
           <div className="draft-field-row">
             <label>Issue Type</label>
-            <select value={type} onChange={(e) => handleChange('issue_type', e.target.value)}>
+            <select
+              value={edited.issue_type || type}
+              onChange={(e) => handleChange('issue_type', e.target.value)}
+            >
               {issueTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>

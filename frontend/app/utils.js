@@ -2,14 +2,13 @@ import { JIRA_URL_RE, EPIC_KEYWORD_RE, PROJECT_KEY_RE, TICKET_KEY_RE } from "./c
 
 function detectAnalyzeIntent(text) {
   const lowerText = text.toLowerCase();
-  
-  // If user wants to CREATE a ticket, don't route to analyze
-  // Even if the message contains a ticket key pattern
+
+  // If user wants to create/draft tickets, don't treat this as analyze intent.
   if (/^(create|generate|make|draft|build|add)\s/i.test(text)) {
-    return null;  // Let backend LLM handle create requests
+    return null;
   }
-  
-  // If text contains JSON-like structure with "key", it's likely a create request
+
+  // If text looks like ticket JSON payload, don't auto-route to analyze.
   if (text.includes('"key"') || text.includes('"issue_type"') || text.includes('"summary"')) {
     return null;
   }

@@ -8,6 +8,7 @@ from langgraph.graph import END, StateGraph
 
 from config import JIRA_API_TOKEN, JIRA_URL, JIRA_USERNAME, OPENAI_API_KEY, GOOGLE_API_KEY, GROQ_API_KEY
 from prompts.ticket_generation import TICKET_GENERATION_PROMPT
+from agents.chat.utils import normalize_ticket_data
 from services.jira import push_tickets
 
 
@@ -49,7 +50,8 @@ def _get_chain():
 def _generate_node(state: TicketState) -> dict:
     """Call GPT-4o to produce structured ticket JSON from PRD text."""
     try:
-        ticket_data = _get_chain().invoke({"prd_content": state["prd_text"]})
+        raw_ticket_data = _get_chain().invoke({"prd_content": state["prd_text"]})
+        ticket_data = normalize_ticket_data(raw_ticket_data)
         return {"ticket_data": ticket_data}
     except Exception as exc:
         return {"error": f"AI generation failed: {exc}"}
