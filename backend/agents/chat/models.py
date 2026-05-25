@@ -43,6 +43,8 @@ class ClarificationAnalysis(BaseModel):
         description="Whether clarification is required before proceeding"
     )
     readiness_score: int = Field(
+        ge=1,
+        le=10,
         description="1-10 score of how ready this is for development (10=ready)"
     )
     summary: str = Field(description="Brief summary of the clarification needs")
@@ -67,13 +69,41 @@ class IntentDecision(BaseModel):
         "generate_tickets",
         "confirm_tickets",
         "ask_for_more_context",
-        "clarify_requirements"
+        "clarify_requirements",
+        "edit_draft"
     ] = Field(description="Best next action for this user turn.")
     reason: str = Field(description="Short explanation for the selected action.")
     missing_information: List[str] = Field(default_factory=list)
     clarification_priority: Literal["blocking", "important", "optional"] = Field(
         default="optional",
         description="How urgent the clarification is"
+    )
+
+
+# ── Edit Draft Model ─────────────────────────────────────────────────────────
+
+
+class EditDraftRequest(BaseModel):
+    """Parsed user request to edit a draft ticket"""
+    ticket_type: Literal["epic", "story", "task"] = Field(
+        description="Type of ticket to edit"
+    )
+    ticket_index: int = Field(
+        description="0-based index of the ticket within its type (0 = first, 1 = second, etc.)"
+    )
+    field: Literal["summary", "description", "priority", "story_points", "labels", "acceptance_criteria"] = Field(
+        description="Which field to update"
+    )
+    action: Literal["set", "append", "remove"] = Field(
+        default="set",
+        description="What to do: set (replace), append (add to), or remove"
+    )
+    value: str = Field(
+        description="The new value or content to apply"
+    )
+    explanation: str = Field(
+        default="",
+        description="Brief explanation of the change"
     )
 
 

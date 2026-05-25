@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { Paperclip, FileText, X, Send, Search, Square, Trash2, Upload, Ticket, BookOpen } from "lucide-react";
-import { detectAnalyzeIntent, detectAnalysisFeedback } from "./utils";
-import { ANALYZE_INTENT_RE } from "./constants";
+import { detectAnalyzeIntent } from "./utils";
 import API_BASE_URL from "./config";
 import MessageBubble from "./components/MessageBubble";
 import DraftPanel from "./components/DraftPanel";
@@ -240,7 +239,7 @@ export default function HomePage() {
       // Build analysis summary message
       let analysisMsg = `Analysis complete. ${ragCitations.length} source(s) retrieved from RAG.`;
       
-      // Add readiness score and clarification questions if present
+      // Add readiness score (clarification questions will be shown via ClarificationInline component)
       if (data.clarification_analysis) {
         const readiness = data.clarification_analysis.readiness_score;
         if (readiness !== undefined) {
@@ -248,22 +247,18 @@ export default function HomePage() {
         }
         
         if (data.clarification_analysis.questions?.length > 0) {
-          // Show questions regardless of readiness score
           const questionIntro = readiness >= 8 
             ? "\n\nThe requirements look solid, but here are a few optional clarifications:"
             : "\n\nI have some clarifying questions about the ticket(s):";
-          analysisMsg += questionIntro + "\n";
-          data.clarification_analysis.questions.forEach((q, i) => {
-            // q is an object with: question, category, suggestions, follow_up_hint
-            analysisMsg += `${i + 1}. ${q.question || q}\n`;
-          });
+          analysisMsg += questionIntro;
+          // Questions with clickable suggestions will be rendered by ClarificationInline component
         } else {
-          // No questions at all
           analysisMsg += "\n\nNo clarification needed - ready for development.";
         }
       }
       
-      pushChatMessage("assistant", analysisMsg);
+      // Pass clarification_analysis to enable clickable suggestion chips
+      pushChatMessage("assistant", analysisMsg, null, data.clarification_analysis);
       toast.success(`Analysis complete — score ${a.overall_score ?? "—"}/10 across ${data.ticket_count} ticket(s)`);
     } catch (e) {
       // Remove the temporary analyzing message on error too
@@ -568,31 +563,14 @@ export default function HomePage() {
     try {
       const intent = detectAnalyzeIntent(sentMessage);
 
-      // If user enters a NEW ticket/epic/project key, start fresh analysis
-      // (even if there's an existing analyzeSession)
+      // Only frontend routing: ticket IDs go to analyze endpoint
+      // Everything else goes to chat API where backend LLM decides routing
       if (intent) {
         await handleAnalyze(sentMessage, intent);
         return;
       }
 
-      // Only route to analysis feedback for EXPLICIT analysis-specific feedback
-      // Let the backend LLM decide everything else based on context
-      const isExplicitAnalysisFeedback = analyzeSession && (
-        /\b(the analysis|your analysis|this analysis|analysis score)\b/i.test(sentMessage) ||
-        /\b(revise|refine|update)\s+(the\s+)?analysis\b/i.test(sentMessage)
-      );
-      
-      if (isExplicitAnalysisFeedback) {
-        await handleFeedback(sentMessage);
-        return;
-      }
-
-      if (ANALYZE_INTENT_RE.test(sentMessage)) {
-        pushChatMessage("user", sentMessage);
-        pushChatMessage("assistant", "Sure! Please share the JIRA ticket key, epic key, or project key you'd like me to analyze (e.g. PROJ-123 or project: SCRUM). You can also paste the full JIRA URL.");
-        return;
-      }
-
+      // All other messages go to chat API - let backend LLM decide the action
       setOptimisticMessage(sentMessage);
       const formData = new FormData();
       formData.append("message", sentMessage);

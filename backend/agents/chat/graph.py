@@ -8,6 +8,7 @@ from agents.chat.nodes import (
     clarify_requirements_node,
     confirm_tickets_node,
     decide_node,
+    edit_draft_node,
     generate_tickets_node,
     respond_node,
     route_after_decision,
@@ -21,6 +22,7 @@ _graph.add_node("ask_for_more_context", ask_for_more_context_node)
 _graph.add_node("clarify_requirements", clarify_requirements_node)
 _graph.add_node("generate_tickets", generate_tickets_node)
 _graph.add_node("confirm_tickets", confirm_tickets_node)
+_graph.add_node("edit_draft", edit_draft_node)
 _graph.set_entry_point("decide")
 _graph.add_conditional_edges(
     "decide",
@@ -31,6 +33,7 @@ _graph.add_conditional_edges(
         "confirm_tickets": "confirm_tickets",
         "ask_for_more_context": "ask_for_more_context",
         "clarify_requirements": "clarify_requirements",
+        "edit_draft": "edit_draft",
         "end": END,
     },
 )
@@ -39,6 +42,7 @@ _graph.add_edge("ask_for_more_context", END)
 _graph.add_edge("clarify_requirements", END)
 _graph.add_edge("generate_tickets", END)
 _graph.add_edge("confirm_tickets", END)
+_graph.add_edge("edit_draft", END)
 
 _agent = _graph.compile()
 
@@ -82,6 +86,7 @@ def run_chat_agent(
         "assistant_message": final_state.get("reply") or "",
         "decision": final_state.get("decision") or {"action": "respond", "reason": "No decision returned."},
         "generated_tickets": final_state.get("generated_tickets"),
+        "pending_tickets": final_state.get("pending_tickets"),
         "created": final_state.get("created"),
         "clarification_analysis": final_state.get("clarification_analysis"),
     }

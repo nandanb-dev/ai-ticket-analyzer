@@ -50,6 +50,20 @@ def summarize_ticket_preview(ticket_data: dict[str, Any]) -> str:
     )
 
 
+def summarize_pending_tickets(pending: dict[str, Any]) -> str:
+    """Build a summary of pending tickets for the edit_draft chain."""
+    lines = []
+    for ticket_type in ["epics", "stories", "tasks"]:
+        ticket_list = pending.get(ticket_type, [])
+        if ticket_list:
+            singular = ticket_type.rstrip("s")
+            for i, ticket in enumerate(ticket_list):
+                summary = ticket.get("summary", "Untitled")
+                priority = ticket.get("priority", "Medium")
+                lines.append(f"{singular} {i + 1}: \"{summary}\" (priority: {priority})")
+    return "\n".join(lines) if lines else "No pending tickets"
+
+
 def retrieve_rag_context(query: str, project_key: str = "") -> Tuple[str, List[dict]]:
     """
     Retrieve relevant context from the RAG knowledge base.

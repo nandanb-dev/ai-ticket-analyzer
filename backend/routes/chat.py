@@ -1,5 +1,6 @@
 import re
 import anyio
+from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 _PROJECT_KEY_PATTERN = re.compile(r"^([A-Z]{2,10})$|project[:\s]+([A-Z]{2,10})|([A-Z]{2,10})\s+is\s+the\s+project", re.IGNORECASE)
 
 
-def _extract_project_key(message: str) -> str | None:
+def _extract_project_key(message: str) -> Optional[str]:
     """Extract a potential Jira project key from user message."""
     # Clean the message
     msg = message.strip()
@@ -190,6 +191,8 @@ async def post_message(
 
     if result.get("generated_tickets"):
         chat_sessions.set_pending_tickets(session_id, result["generated_tickets"], awaiting_confirmation=True)
+    elif result.get("pending_tickets") is not None:
+        chat_sessions.set_pending_tickets(session_id, result["pending_tickets"], awaiting_confirmation=True)
 
     if result.get("created"):
         chat_sessions.set_last_created(session_id, result["created"])
@@ -337,6 +340,8 @@ async def answer_clarification(session_id: str, payload: AnswerClarificationRequ
 
     if result.get("generated_tickets"):
         chat_sessions.set_pending_tickets(session_id, result["generated_tickets"], awaiting_confirmation=True)
+    elif result.get("pending_tickets") is not None:
+        chat_sessions.set_pending_tickets(session_id, result["pending_tickets"], awaiting_confirmation=True)
 
     session = chat_sessions.append_message(session_id, "assistant", result["assistant_message"])
 
@@ -386,6 +391,8 @@ async def proceed_with_assumptions(session_id: str) -> dict:
 
     if result.get("generated_tickets"):
         chat_sessions.set_pending_tickets(session_id, result["generated_tickets"], awaiting_confirmation=True)
+    elif result.get("pending_tickets") is not None:
+        chat_sessions.set_pending_tickets(session_id, result["pending_tickets"], awaiting_confirmation=True)
 
     session = chat_sessions.append_message(session_id, "assistant", result["assistant_message"])
 

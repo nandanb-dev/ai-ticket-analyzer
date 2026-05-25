@@ -205,17 +205,34 @@ async def analyze_tickets(req: AnalyzeRequest):
     # Run clarification analysis on the fetched ticket content
     clarification_analysis = None
     try:
-        # Build context from analyzed tickets for clarification
-        tickets = result.get("analysis", {}).get("tickets", [])
+        # Build context from raw fetched tickets (analysis output may not include summary/description).
+        tickets = result.get("raw_tickets") or []
         if tickets:
             ticket_context_parts = []
             for t in tickets[:5]:  # Limit to first 5 tickets
+                summary = str(t.get("summary") or "").strip()
+                description = str(t.get("description") or "").strip()
+                labels = ", ".join(t.get("labels") or [])
+
+                if not summary and not description and not labels:
+                    continue
+
                 ticket_context_parts.append(
                     f"Ticket: {t.get('key', 'Unknown')}\n"
-                    f"Summary: {t.get('summary', '')}\n"
-                    f"Description: {t.get('description', '')[:500]}"
+                    f"Summary: {summary}\n"
+                    f"Description: {description[:800]}\n"
+                    f"Labels: {labels}"
                 )
             ticket_context = "\n\n".join(ticket_context_parts)
+
+            if combined_context.strip():
+                if ticket_context:
+                    ticket_context = f"{ticket_context}\n\nAdditional user context:\n{combined_context[:1500]}"
+                else:
+                    ticket_context = combined_context[:1500]
+
+            if not ticket_context.strip():
+                ticket_context = "No ticket details available from JIRA payload."
             
             # Reuse RAG context from analysis (same citations)
             rag_citations = result.get("rag_citations", [])
@@ -237,6 +254,24 @@ async def analyze_tickets(req: AnalyzeRequest):
                     "rag_context": format_rag_context(rag_text),
                 })
             )
+
+            # Guardrail parity with chat clarification path.
+            source_text = ticket_context.lower()
+            structure_markers = [
+                "implementation details",
+                "acceptance criteria",
+                "test cases",
+                "edge cases",
+            ]
+            has_sections = sum(1 for marker in structure_markers if marker in source_text) >= 2
+            has_bdd = all(token in source_text for token in ["given", "when", "then"])
+            if clarification_result.readiness_score <= 2 and (has_sections or has_bdd):
+                clarification_result.readiness_score = 6
+                clarification_result.summary = (
+                    "The requirements include baseline structure and validation scenarios. "
+                    "Clarifications may still be needed, but this is not near-empty readiness."
+                )
+
             clarification_analysis = clarification_result.model_dump()
     except Exception as e:
         logger.warning(f"Clarification analysis failed (non-fatal): {e}")

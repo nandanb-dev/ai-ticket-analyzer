@@ -2,7 +2,7 @@ from typing import Any
 
 from services.jira import push_tickets
 
-from agents.chat.chains import get_decision_chain, get_response_chain, get_ticket_chain, get_clarification_chain
+from agents.chat.chains import get_decision_chain, get_response_chain, get_ticket_chain, get_clarification_chain, get_edit_draft_chain
 from agents.chat.models import ChatState
 from agents.chat.utils import (
     build_generation_context,
@@ -11,6 +11,7 @@ from agents.chat.utils import (
     format_rag_context,
     retrieve_rag_context,
     summarize_ticket_preview,
+    summarize_pending_tickets,
 )
 
 
@@ -115,6 +116,29 @@ def clarify_requirements_node(state: ChatState) -> dict[str, Any]:
             "latest_user_message": state["latest_user_message"],
         })
 
+        # Guardrail: avoid unrealistically low readiness on well-structured requirement text.
+        source_text = "\n".join(
+            [
+                state.get("latest_user_message", "") or "",
+                state.get("context_text", "") or "",
+            ]
+        ).lower()
+        structure_markers = [
+            "implementation details",
+            "acceptance criteria",
+            "test cases",
+            "edge cases",
+        ]
+        has_sections = sum(1 for marker in structure_markers if marker in source_text) >= 2
+        has_bdd = all(token in source_text for token in ["given", "when", "then"])
+
+        if analysis.readiness_score <= 2 and (has_sections or has_bdd):
+            analysis.readiness_score = 6
+            analysis.summary = (
+                "The requirements include strong baseline structure (implementation details, acceptance criteria, "
+                "and validation scenarios). Some clarifications may still be needed, but this is not near-zero readiness."
+            )
+
         # Build conversational response with questions
         reply_parts = []
 
@@ -179,6 +203,166 @@ def clarify_requirements_node(state: ChatState) -> dict[str, Any]:
         return result
     except Exception as exc:
         return {"error": f"Clarification analysis failed: {exc}"}
+
+
+def edit_draft_node(state: ChatState) -> dict[str, Any]:
+    """Parse and apply user's edit request to pending draft tickets"""
+    try:
+        pending = state.get("pending_tickets")
+        if not pending:
+            return {"reply": "There are no draft tickets to edit. First, ask me to generate tickets."}
+
+        user_message = (state.get("latest_user_message") or "").lower()
+        single_story_markers = [
+            "single story",
+            "one story",
+            "1 story",
+            "only story",
+            "just one story",
+            "just a story",
+        ]
+        wants_single_story = (
+            any(marker in user_message for marker in single_story_markers)
+            and ("task" in user_message or "story" in user_message or "convert" in user_message or "merge" in user_message)
+        )
+
+        if wants_single_story:
+            stories = pending.get("stories", []) or []
+            tasks = pending.get("tasks", []) or []
+
+            if not stories and not tasks:
+                return {"reply": "I could not find stories or tasks to consolidate into a single story."}
+
+            if not stories and tasks:
+                first_task = tasks[0]
+                stories = [{
+                    "summary": first_task.get("summary", "Consolidated Story"),
+                    "description": first_task.get("description", ""),
+                    "priority": first_task.get("priority", "Medium"),
+                    "story_points": first_task.get("story_points"),
+                    "labels": first_task.get("labels", []),
+                    "acceptance_criteria": first_task.get("acceptance_criteria", []),
+                }]
+                tasks = tasks[1:]
+
+            base_story = stories[0]
+
+            if len(stories) > 1:
+                extra_story_summaries = [s.get("summary", "Untitled story") for s in stories[1:]]
+                if extra_story_summaries:
+                    extra_line = "Additional story scope consolidated: " + ", ".join(extra_story_summaries)
+                    existing_desc = base_story.get("description", "")
+                    base_story["description"] = f"{existing_desc}\n\n{extra_line}" if existing_desc else extra_line
+
+            if tasks:
+                task_lines = []
+                for task in tasks:
+                    task_summary = task.get("summary", "Untitled task")
+                    task_desc = task.get("description", "")
+                    if task_desc:
+                        task_lines.append(f"- {task_summary}: {task_desc}")
+                    else:
+                        task_lines.append(f"- {task_summary}")
+
+                if task_lines:
+                    consolidation_block = "Implementation details consolidated from tasks:\n" + "\n".join(task_lines)
+                    existing_desc = base_story.get("description", "")
+                    base_story["description"] = f"{existing_desc}\n\n{consolidation_block}" if existing_desc else consolidation_block
+
+            base_labels = base_story.get("labels", []) or []
+            for source_ticket in (stories[1:] + tasks):
+                for label in (source_ticket.get("labels", []) or []):
+                    if label not in base_labels:
+                        base_labels.append(label)
+            base_story["labels"] = base_labels
+
+            pending["epics"] = []
+            pending["stories"] = [base_story]
+            pending["tasks"] = []
+
+            updated_preview = summarize_ticket_preview(pending)
+            return {
+                "pending_tickets": pending,
+                "reply": (
+                    "Consolidated the draft into a single story format by merging story/task details into one story.\n\n"
+                    f"**Updated ticket preview:**\n{updated_preview}\n\n"
+                    "_Say 'confirm' to create in Jira, or request more edits._"
+                ),
+            }
+
+        # Build summary of pending tickets for the LLM
+        pending_summary = summarize_pending_tickets(pending)
+
+        # Parse the edit request using LLM
+        edit_request = get_edit_draft_chain().invoke({
+            "pending_tickets_summary": pending_summary,
+            "latest_user_message": state["latest_user_message"],
+        })
+
+        ticket_type = edit_request.ticket_type
+        ticket_index = edit_request.ticket_index
+        field = edit_request.field
+        action = edit_request.action
+        value = edit_request.value
+
+        # Handle irregular pluralization (story -> stories).
+        plural_key = {
+            "epic": "epics",
+            "story": "stories",
+            "task": "tasks",
+        }.get(ticket_type, f"{ticket_type}s")
+
+        # Validate ticket type exists
+        ticket_list = pending.get(plural_key, [])
+        if not ticket_list:
+            return {"reply": f"No {plural_key} found in pending tickets. Available types: {', '.join(k for k in pending.keys() if pending[k])}"}
+
+        # Validate index
+        if ticket_index < 0 or ticket_index >= len(ticket_list):
+            return {"reply": f"Invalid {ticket_type} index. You have {len(ticket_list)} {ticket_type}(s) (use 1-{len(ticket_list)})."}
+
+        # Get the ticket to edit
+        ticket = ticket_list[ticket_index]
+
+        # Apply the edit
+        if action == "remove" and field == "summary":
+            # Remove entire ticket
+            ticket_list.pop(ticket_index)
+            reply = f"Removed {ticket_type} #{ticket_index + 1}: \"{ticket.get('summary', 'Unknown')}\""
+        elif action == "set":
+            old_value = ticket.get(field, "")
+            ticket[field] = value
+            reply = f"Updated {ticket_type} #{ticket_index + 1}'s **{field}** from \"{old_value}\" to \"{value}\""
+        elif action == "append":
+            old_value = ticket.get(field, "")
+            if isinstance(old_value, list):
+                ticket[field].append(value)
+            else:
+                ticket[field] = f"{old_value}\n{value}" if old_value else value
+            reply = f"Appended to {ticket_type} #{ticket_index + 1}'s **{field}**: \"{value}\""
+        elif action == "remove":
+            if isinstance(ticket.get(field), list):
+                # Try to remove matching item from list
+                if value in ticket[field]:
+                    ticket[field].remove(value)
+                    reply = f"Removed \"{value}\" from {ticket_type} #{ticket_index + 1}'s **{field}**"
+                else:
+                    reply = f"Value \"{value}\" not found in {ticket_type} #{ticket_index + 1}'s **{field}**"
+            else:
+                ticket[field] = ""
+                reply = f"Cleared {ticket_type} #{ticket_index + 1}'s **{field}**"
+        else:
+            return {"reply": f"Unknown action: {action}. Use 'set', 'append', or 'remove'."}
+
+        # Build updated preview
+        updated_preview = summarize_ticket_preview(pending)
+        
+        return {
+            "pending_tickets": pending,  # Return updated tickets
+            "reply": f"{reply}\n\n**Updated ticket preview:**\n{updated_preview}\n\n_Say 'confirm' to create in Jira, or request more edits._",
+        }
+    except Exception as exc:
+        return {"error": f"Edit draft failed: {exc}"}
 
 
 def route_after_decision(state: ChatState) -> str:
