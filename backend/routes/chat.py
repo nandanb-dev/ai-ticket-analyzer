@@ -12,8 +12,10 @@ from services.document import extract_text
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-# Jira project keys: 2-10 uppercase letters (e.g., KAN, PROJ, MYPROJECT)
-_PROJECT_KEY_PATTERN = re.compile(r"^([A-Z]{2,10})$|project[:\s]+([A-Z]{2,10})|([A-Z]{2,10})\s+is\s+the\s+project", re.IGNORECASE)
+# Jira project keys: uppercase alphanumeric, 2-10 chars (e.g., KAN, PROJ1, MYPROJECT)
+_PROJECT_KEY_PATTERN = re.compile(
+    r"\b(?:project(?:\s+key)?|in\s+project)\s*[:=-]?\s*([A-Z][A-Z0-9]{1,9})\b"
+)
 
 
 def _extract_project_key(message: str) -> Optional[str]:
@@ -22,16 +24,13 @@ def _extract_project_key(message: str) -> Optional[str]:
     msg = message.strip()
     
     # Check if entire message is just a project key (e.g., "KAN")
-    if re.match(r"^[A-Za-z]{2,10}$", msg):
-        return msg.upper()
+    if re.match(r"^[A-Z][A-Z0-9]{1,9}$", msg):
+        return msg
     
-    # Check for patterns like "project: KAN", "project KAN", "KAN is the project"
+    # Check for patterns like "project key: KAN" or "in project KAN"
     match = _PROJECT_KEY_PATTERN.search(msg)
     if match:
-        # Return the first non-None group
-        for group in match.groups():
-            if group:
-                return group.upper()
+        return match.group(1)
     
     return None
 
@@ -189,9 +188,11 @@ async def post_message(
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
+    decision_action = (result.get("decision") or {}).get("action")
+
     if result.get("generated_tickets"):
         chat_sessions.set_pending_tickets(session_id, result["generated_tickets"], awaiting_confirmation=True)
-    elif result.get("pending_tickets") is not None:
+    elif result.get("pending_tickets") is not None and decision_action in {"edit_draft"}:
         chat_sessions.set_pending_tickets(session_id, result["pending_tickets"], awaiting_confirmation=True)
 
     if result.get("created"):
@@ -202,6 +203,12 @@ async def post_message(
 
     response = _session_response(session)
     response["decision"] = result["decision"]
+    if result.get("analysis_result") is not None:
+        response["analysis_result"] = result["analysis_result"]
+    if result.get("rag_citations") is not None:
+        response["rag_citations"] = result["rag_citations"]
+    if result.get("clarification_analysis") is not None:
+        response["clarification_analysis"] = result["clarification_analysis"]
     if failed_files:
         response["failed_files"] = failed_files
     return response

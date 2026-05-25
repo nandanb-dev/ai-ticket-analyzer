@@ -66,6 +66,7 @@ class ClarificationAnalysis(BaseModel):
 class IntentDecision(BaseModel):
     action: Literal[
         "respond",
+        "analyze_tickets",
         "generate_tickets",
         "confirm_tickets",
         "ask_for_more_context",
@@ -77,6 +78,22 @@ class IntentDecision(BaseModel):
     clarification_priority: Literal["blocking", "important", "optional"] = Field(
         default="optional",
         description="How urgent the clarification is"
+    )
+    analysis_scope: Literal["project", "epic", "ticket", "none"] = Field(
+        default="none",
+        description="Scope for analyze_tickets action"
+    )
+    analysis_target: str = Field(
+        default="",
+        description="Project key, epic key, or ticket key for analyze_tickets"
+    )
+    confluence_page: str = Field(
+        default="",
+        description="Optional Confluence URL or page id to enrich analysis context"
+    )
+    analysis_context: str = Field(
+        default="",
+        description="Additional context to include while analyzing tickets"
     )
 
 
@@ -124,6 +141,8 @@ class ChatState(TypedDict):
     reply: Optional[str]
     generated_tickets: Optional[Dict[str, Any]]
     created: Optional[Dict[str, Any]]
+    analysis_result: Optional[Dict[str, Any]]
+    rag_citations: Optional[List[Dict[str, Any]]]
     error: Optional[str]
     clarification_analysis: Optional[Dict[str, Any]]
     clarification_round: int

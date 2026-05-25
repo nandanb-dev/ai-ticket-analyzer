@@ -4,6 +4,7 @@ from langgraph.graph import END, StateGraph
 
 from agents.chat.models import ChatState
 from agents.chat.nodes import (
+    analyze_tickets_node,
     ask_for_more_context_node,
     clarify_requirements_node,
     confirm_tickets_node,
@@ -18,6 +19,7 @@ from agents.chat.nodes import (
 _graph = StateGraph(ChatState)
 _graph.add_node("decide", decide_node)
 _graph.add_node("respond", respond_node)
+_graph.add_node("analyze_tickets", analyze_tickets_node)
 _graph.add_node("ask_for_more_context", ask_for_more_context_node)
 _graph.add_node("clarify_requirements", clarify_requirements_node)
 _graph.add_node("generate_tickets", generate_tickets_node)
@@ -29,6 +31,7 @@ _graph.add_conditional_edges(
     route_after_decision,
     {
         "respond": "respond",
+        "analyze_tickets": "analyze_tickets",
         "generate_tickets": "generate_tickets",
         "confirm_tickets": "confirm_tickets",
         "ask_for_more_context": "ask_for_more_context",
@@ -38,6 +41,7 @@ _graph.add_conditional_edges(
     },
 )
 _graph.add_edge("respond", END)
+_graph.add_edge("analyze_tickets", END)
 _graph.add_edge("ask_for_more_context", END)
 _graph.add_edge("clarify_requirements", END)
 _graph.add_edge("generate_tickets", END)
@@ -74,6 +78,8 @@ def run_chat_agent(
         "reply": None,
         "generated_tickets": None,
         "created": None,
+        "analysis_result": None,
+        "rag_citations": None,
         "error": None,
         "clarification_analysis": None,
         "clarification_round": clarification_round,
@@ -88,5 +94,7 @@ def run_chat_agent(
         "generated_tickets": final_state.get("generated_tickets"),
         "pending_tickets": final_state.get("pending_tickets"),
         "created": final_state.get("created"),
+        "analysis_result": final_state.get("analysis_result"),
+        "rag_citations": final_state.get("rag_citations"),
         "clarification_analysis": final_state.get("clarification_analysis"),
     }

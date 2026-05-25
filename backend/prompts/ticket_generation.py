@@ -57,6 +57,7 @@ Return a single JSON object — no markdown fences, no extra text — matching t
 Rules:
 - If user specifies constraints (e.g., "one story"), follow those exactly - do not add extra tickets
 - If no constraints, cover EVERY feature mentioned in the PRD — do not skip anything
+- Keep summaries and descriptions concise and implementation-ready; avoid verbose or generic filler text
 - Each story must have ≥3 acceptance criteria (Given/When/Then) and ≥3 test cases (mix of positive, negative, edge)
 - Each task must have ≥2 acceptance criteria
 - Edge cases must be feature-specific — no generic placeholders
@@ -80,6 +81,22 @@ IMPORTANT - Respect user constraints:
 - Default when no constraint specified: generate appropriate epics, stories, AND tasks
 
 Parse the "Latest instruction" below for any quantity or type constraints.
+
+Quality bar for Jira-ready output:
+- Summary style:
+  • Story: single sentence in "As a [role], I want [action] so that [benefit]" format
+  • Task: imperative technical action (for example "Implement OAuth callback validation")
+- Description style:
+  • Maximum 5-8 concise bullet points across sections
+  • Include scope boundaries, key technical notes, and non-goals
+  • No repeated context paragraphs
+- Acceptance criteria style:
+  • Testable, objective, and measurable
+  • Avoid vague terms like "properly", "quickly", "user-friendly" without measurable definition
+- Test cases style:
+  • Realistic and brief, with concrete expected outcomes
+  • At least one negative and one edge case per story
+- Keep labels minimal and useful (3-5 max per ticket)
 
 {prd_content}"""
     ),

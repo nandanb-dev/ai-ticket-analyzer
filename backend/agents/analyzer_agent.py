@@ -18,7 +18,18 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langgraph.graph import END, StateGraph
 
-from config import CHAT_MODEL, JIRA_API_TOKEN, JIRA_URL, JIRA_USERNAME, OPENAI_API_KEY, GOOGLE_API_KEY, GROQ_API_KEY
+from config import (
+    CHAT_MODEL,
+    JIRA_API_TOKEN,
+    JIRA_URL,
+    JIRA_USERNAME,
+    OPENAI_API_KEY,
+    GOOGLE_API_KEY,
+    GROQ_API_KEY,
+    OPENAI_CHAT_MODEL,
+    GOOGLE_CHAT_MODEL,
+    GROQ_CHAT_MODEL,
+)
 from prompts.ticket_analysis import TICKET_ANALYSIS_PROMPT, TICKET_REFINEMENT_PROMPT
 from services.jira import fetch_epic_tickets, fetch_project_tickets, fetch_ticket_by_key, update_issue
 
@@ -55,19 +66,27 @@ _analysis_chain = None
 _refinement_chain = None
 
 
+def _get_preferred_llm(temperature: float):
+    if OPENAI_API_KEY:
+        model = CHAT_MODEL if CHAT_MODEL.startswith(("gpt", "o1", "o3", "o4")) else OPENAI_CHAT_MODEL
+        return ChatOpenAI(model=model, temperature=temperature, api_key=OPENAI_API_KEY)
+
+    if GOOGLE_API_KEY:
+        model = CHAT_MODEL if "gemini" in CHAT_MODEL.lower() else GOOGLE_CHAT_MODEL
+        return ChatGoogleGenerativeAI(model=model, temperature=temperature, api_key=GOOGLE_API_KEY)
+
+    if GROQ_API_KEY:
+        model = CHAT_MODEL if "llama" in CHAT_MODEL.lower() or "mixtral" in CHAT_MODEL.lower() else GROQ_CHAT_MODEL
+        return ChatGroq(model=model, temperature=temperature, api_key=GROQ_API_KEY)
+
+    raise RuntimeError("No LLM API key configured. Set OPENAI_API_KEY (preferred) in backend/.env")
+
+
 def _get_analysis_chain():
     global _analysis_chain
     if _analysis_chain is not None:
         return _analysis_chain
-    # if not OPENAI_API_KEY:
-    #     raise RuntimeError("OPENAI_API_KEY is not configured in .env")
-    # llm = ChatOpenAI(model=CHAT_MODEL, temperature=0.1, api_key=OPENAI_API_KEY)
-    # if not GOOGLE_API_KEY:
-    #     raise RuntimeError("GOOGLE_API_KEY is not configured in .env")
-    # llm = ChatGoogleGenerativeAI(model=CHAT_MODEL, temperature=0.1, api_key=GOOGLE_API_KEY)
-    if not GROQ_API_KEY:
-        raise RuntimeError("GROQ_API_KEY is not configured in .env")
-    llm = ChatGroq(model=CHAT_MODEL, temperature=0.1, api_key=GROQ_API_KEY)
+    llm = _get_preferred_llm(temperature=0.1)
     _analysis_chain = TICKET_ANALYSIS_PROMPT | llm | JsonOutputParser()
     return _analysis_chain
 
@@ -76,15 +95,7 @@ def _get_refinement_chain():
     global _refinement_chain
     if _refinement_chain is not None:
         return _refinement_chain
-    # if not OPENAI_API_KEY:
-    #     raise RuntimeError("OPENAI_API_KEY is not configured in .env")
-    # llm = ChatOpenAI(model=CHAT_MODEL, temperature=0.1, api_key=OPENAI_API_KEY)
-    # if not GOOGLE_API_KEY:
-    #     raise RuntimeError("GOOGLE_API_KEY is not configured in .env")
-    # llm = ChatGoogleGenerativeAI(model=CHAT_MODEL, temperature=0.1, api_key=GOOGLE_API_KEY)
-    if not GROQ_API_KEY:
-        raise RuntimeError("GROQ_API_KEY is not configured in .env")
-    llm = ChatGroq(model=CHAT_MODEL, temperature=0.1, api_key=GROQ_API_KEY)
+    llm = _get_preferred_llm(temperature=0.1)
     _refinement_chain = TICKET_REFINEMENT_PROMPT | llm | JsonOutputParser()
     return _refinement_chain
 
