@@ -1677,7 +1677,6 @@ textarea { resize: vertical; }
   display: flex;
   align-items: center;
   gap: 5px;
-  flex-shrink: 0;
 }
 
 .priority-select {
@@ -2525,4 +2524,10 @@ textarea { resize: vertical; }
   display: inline-block;
   vertical-align: text-bottom;
   margin-right: 5px;
+}
+
+.issue-header{
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
