@@ -81,6 +81,7 @@ function AnalysisCard({ ticket, sessionId, onApplied, globalSources = [] }) {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 {ticket.issue_type === 'Epic' ? <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/> : 
                  ticket.issue_type === 'Story' ? <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/> :
+                 ticket.issue_type === 'Bug' ? <path d="M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6M5.75 14H2M22 14h-3.75M5.75 11H2M22 11h-3.75"/> :
                  <circle cx="12" cy="12" r="10"/>}
               </svg>
               {ticket.issue_type}

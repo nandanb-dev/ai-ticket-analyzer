@@ -44,7 +44,8 @@ function DraftPanel({ tickets, onUpdate, onDelete, onCreate, isCreating, canCrea
   const epicCount = (tickets.epics || []).length;
   const storyCount = (tickets.stories || []).length;
   const taskCount = (tickets.tasks || []).length;
-  const totalCount = epicCount + storyCount + taskCount;
+  const bugCount = (tickets.bugs || []).length;
+  const totalCount = epicCount + storyCount + taskCount + bugCount;
 
   return (
     <div className="draft-panel">
@@ -57,6 +58,7 @@ function DraftPanel({ tickets, onUpdate, onDelete, onCreate, isCreating, canCrea
           <span className="stat-pill epic">{epicCount} Epics</span>
           <span className="stat-pill story">{storyCount} Stories</span>
           <span className="stat-pill task">{taskCount} Tasks</span>
+          <span className="stat-pill bug">{bugCount} Bugs</span>
         </div>
       </div>
 
@@ -124,6 +126,16 @@ function DraftPanel({ tickets, onUpdate, onDelete, onCreate, isCreating, canCrea
               key={`task-${i}`}
               ticket={ticket}
               type="Task"
+              index={i}
+              onUpdate={handleUpdate}
+              onDelete={handleDelete}
+            />
+          ))}
+          {(tickets.bugs || []).map((ticket, i) => (
+            <DraftTicketCard
+              key={`bug-${i}`}
+              ticket={ticket}
+              type="Bug"
               index={i}
               onUpdate={handleUpdate}
               onDelete={handleDelete}

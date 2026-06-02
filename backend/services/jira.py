@@ -233,8 +233,9 @@ def push_tickets(project_key: str, ticket_data: dict) -> dict:
     epics   = ticket_data.get("epics", [])
     stories = ticket_data.get("stories", [])
     tasks   = ticket_data.get("tasks", [])
+    bugs    = ticket_data.get("bugs", [])
 
-    created = {"epics": [], "stories": [], "tasks": []}
+    created = {"epics": [], "stories": [], "tasks": [], "bugs": []}
     
     # Get available issue types for the project
     available_types = get_project_issue_types(project_key)
@@ -243,6 +244,7 @@ def push_tickets(project_key: str, ticket_data: dict) -> dict:
     epic_type = _map_issue_type("Epic", available_types)
     story_type = _map_issue_type("Story", available_types)
     task_type = _map_issue_type("Task", available_types)
+    bug_type = _map_issue_type("Bug", available_types)
 
     try:
         # Epics — created first so stories can link to them
@@ -292,12 +294,26 @@ def push_tickets(project_key: str, ticket_data: dict) -> dict:
                 parent_key=parent_key,
             )
             created["tasks"].append({"key": result["key"], "summary": task["summary"]})
+
+        # Bugs — standalone issues (no parent linking by default)
+        for bug in bugs:
+            description = _build_bug_description(bug)
+
+            result = create_issue(
+                project_key=project_key,
+                issue_type=bug_type,
+                summary=bug["summary"],
+                description=description,
+                priority=bug.get("priority", "High"),
+                labels=bug.get("labels", []),
+            )
+            created["bugs"].append({"key": result["key"], "summary": bug["summary"]})
     except IndexError as exc:
         raise HTTPException(
             status_code=400,
             detail=(
                 "Invalid ticket parent index in draft data. "
-                f"epics={len(epics)}, stories={len(stories)}, tasks={len(tasks)}"
+                f"epics={len(epics)}, stories={len(stories)}, tasks={len(tasks)}, bugs={len(bugs)}"
             ),
         ) from exc
 
@@ -332,6 +348,20 @@ def _build_task_description(task: dict) -> str:
         lines = _format_acceptance_criteria(task.get("acceptance_criteria"))
         if lines:
             description += f"\n\nAcceptance Criteria:\n{lines}"
+
+    return description
+
+
+def _build_bug_description(bug: dict) -> str:
+    description = bug["description"]
+
+    if bug.get("acceptance_criteria"):
+        lines = _format_acceptance_criteria(bug.get("acceptance_criteria"))
+        if lines:
+            description += f"\n\nFix Verification Criteria:\n{lines}"
+
+    if bug.get("environment"):
+        description += f"\n\nEnvironment: {bug['environment']}"
 
     return description
 
